@@ -4,16 +4,15 @@
 [![JSR Score](https://jsr.io/badges/@hugojosefson/calendar-filter/score)](https://jsr.io/@hugojosefson/calendar-filter/score)
 [![CI](https://github.com/hugojosefson/calendar-filter/actions/workflows/release.yaml/badge.svg)](https://github.com/hugojosefson/calendar-filter/actions/workflows/release.yaml)
 
-A stateless web server that filters iCalendar (ICS) subscription feeds with
-regular expressions. Point your calendar app at this server instead of the
-original feed, and only the events you want show up — for example, only your
-kid's age group, from a club calendar that contains every group.
+A web handler that filters iCalendar (ICS) subscription feeds with regular
+expressions. Point your calendar app at this handler to keep selected events.
+For example, keep your kid's age group from a club calendar that contains every
+group.
 
 ## Requirements
 
-Requires [Deno](https://deno.com/) v2.9.5 or later.
-
-_...or..._
+Requires [Deno](https://deno.com/) v2.9.5 or later. The downloaded script can
+install Deno when these tools are available:
 
 - `/bin/sh`
 - `unzip`
@@ -31,12 +30,17 @@ calendar app ──subscribe──▶ calendar-filter ──fetch──▶ upstr
 
 On every request the server:
 
-1. Fetches the upstream calendar from `input`.
+1. Gets the upstream calendar from its bounded process-local cache or fetches it
+   from `input`.
 2. Decides for every `VEVENT` whether it is kept, using the filter parameters
    below.
-3. Returns the calendar with only the kept events. Everything else — `VCALENDAR`
-   properties, `VTIMEZONE` components, line folding, CRLF line endings — is
-   preserved byte for byte.
+3. Returns the calendar with only the kept events.
+
+Apart from removed `VEVENT` blocks, the response preserves the decoded upstream
+body byte for byte. The optional `calendar-name` parameter is the one exception:
+it replaces or inserts `X-WR-CALNAME` as described below. The handler preserves
+all other `VCALENDAR` properties, components such as `VTIMEZONE`, line folding,
+and line endings.
 
 ### Filter pipeline
 
@@ -44,22 +48,21 @@ The filter parameters form an **ordered rule pipeline**. For each event, the
 parameters are evaluated in the order they appear in the URL, and the first
 parameter that matches the event decides its fate:
 
-- `include-regex=R` — if `R` matches the event, the event is **included**, and
+- `include-regex=R`: if `R` matches the event, the event is **included**, and
   evaluation stops.
-- `exclude-regex=R` — if `R` matches the event, the event is **excluded**, and
+- `exclude-regex=R`: if `R` matches the event, the event is **excluded**, and
   evaluation stops.
-- `include` — a catch-all: any event that reaches this point is **included**,
-  and evaluation stops.
+- `include`: a catch-all. Any event that reaches this point is **included**, and
+  evaluation stops.
 
 The regex parameters also come in flagged forms, `include-regex-<flags>` and
 `exclude-regex-<flags>` (for example `include-regex-iu`). They behave
-identically to the plain forms; only the compilation flags differ (see
-[Matching](#matching)). Flagged and plain parameters can be mixed freely in one
-URL.
+identically to the plain forms; only the matching flags differ. Flagged and
+plain parameters may be mixed in one URL.
 
 If an event matches no parameter, it is **excluded** (default deny).
 
-So the classic "my group plus everything untagged" setup is:
+A common setup keeps one group and all untagged events:
 
 ```
 include-regex=\bP15\b & exclude-regex=\b(P|F)\d+\b & include
@@ -72,108 +75,226 @@ include-regex=\bP15\b & exclude-regex=\b(P|F)\d+\b & include
 
 ### Matching
 
-- Each regex is a JavaScript regular expression compiled as
-  `new RegExp(pattern, flags)`. The `pattern` is the **entire** parameter value
-  — the server never interprets or rewrites it. The `flags` are the parameter
-  name suffix, passed verbatim as the second `RegExp` argument (empty for the
-  plain forms). No flags are enabled by default.
-- If the `RegExp` constructor throws (invalid pattern or invalid flags), the
-  request is a `400`.
-- The `g` and `y` flags are rejected with `400`: matching uses
-  `RegExp.prototype.test`, which is stateful for global and sticky regexes.
+- Patterns use [Google RE2 syntax](https://github.com/google/re2/wiki/Syntax),
+  which guarantees linear-time matching. Backreferences and lookaround are not
+  supported. A pattern that RE2 rejects makes the request a `400`.
+- The pattern is the entire decoded parameter value. The server does not rewrite
+  it.
+- A flagged parameter suffix may contain `i`, `m`, `s`, and `u`, in any order,
+  at most once each. Any other flag or a duplicate flag makes the request a
+  `400`. The handler runs RE2 in UTF-8 mode for every pattern, so `u` is
+  accepted for familiarity but does not change matching.
 - A regex is **unanchored** (it may match anywhere) and case-sensitive unless
   `i` is given. An empty pattern matches everything, so `include-regex=` is
   equivalent to `include`.
-- A regex is tested against the event's `SUMMARY`, `DESCRIPTION`, and `LOCATION`
-  values, one field at a time (RFC 5545 unescaping applied). A match in any
-  field counts.
+- A regex is tested against every `SUMMARY`, `DESCRIPTION`, and `LOCATION`
+  property directly on the event, one value at a time. Properties in `VALARM`
+  and other child components do not participate. A match in any value counts.
+- Before matching, the handler unfolds the content line and applies RFC 5545
+  TEXT unescaping for `\\`, `\,`, `\;`, and `\n` or `\N`. It leaves unknown
+  backslash sequences unchanged.
 - `VEVENT` blocks are found structurally (`BEGIN:VEVENT` … the matching
   `END:VEVENT`, including any nested `VALARM`), so line folding does not affect
   matching.
+- RE2's `\w`, `\W`, `\b`, and `\B` use ASCII word characters. Use Unicode
+  properties such as `\p{L}` when a pattern needs Unicode character classes.
 
 Useful flags:
 
 | Flag | Effect                                                                                                         |
 | ---- | -------------------------------------------------------------------------------------------------------------- |
 | `i`  | Case-insensitive.                                                                                              |
-| `u`  | Unicode: `\b`, `\B`, `\w`, and `\W` become unicode-aware, and `\p{…}` property escapes work.                   |
+| `u`  | Accepted as a no-op. Unicode mode and `\p{…}` property escapes are always enabled.                             |
 | `m`  | `^` and `$` match at line boundaries, not just the start/end of the field (field values may contain newlines). |
 | `s`  | `.` also matches newlines.                                                                                     |
 
 For example, `include-regex-iu` with the pattern `\bträning:? +P15\b` matches
-`Träning: P15` and `träning: p15`, with word boundaries that understand Swedish
-letters.
+`Träning: P15` and `träning: p15`.
 
 ## API
 
-### `GET /webcal`
+### `/webcal`
 
-The only API endpoint.
+`GET` and `HEAD` filter a calendar. `OPTIONS` answers CORS preflight requests.
 
 #### Query parameters
 
-| Parameter               | Required | Description                                                                             |
-| ----------------------- | -------- | --------------------------------------------------------------------------------------- |
-| `input`                 | yes      | Upstream calendar URL. `http`, `https`, or `webcal` (normalized to `https`).            |
-| `include-regex`         | no\*     | Include the event if the regex matches (no flags). Repeat the parameter for more rules. |
-| `include-regex-<flags>` | no\*     | Same, but compiled with the given flags, e.g. `include-regex-iu`.                       |
-| `exclude-regex`         | no\*     | Exclude the event if the regex matches (no flags).                                      |
-| `exclude-regex-<flags>` | no\*     | Same, but compiled with the given flags.                                                |
-| `include`               | no\*     | Include any event that reaches this point. Value is ignored.                            |
+| Parameter               | Required | Description                                                                          |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `input`                 | yes      | Upstream calendar URL. `http`, `https`, or `webcal`, which is normalized to `https`. |
+| `calendar-name`         | no       | Display-name override. It must contain at least one decoded character. At most one.  |
+| `include-regex`         | no\*     | Include the event if the regex matches. Repeat the parameter for more rules.         |
+| `include-regex-<flags>` | no\*     | Same, with unique `i`, `m`, `s`, or `u` flags, for example `include-regex-iu`.       |
+| `exclude-regex`         | no\*     | Exclude the event if the regex matches.                                              |
+| `exclude-regex-<flags>` | no\*     | Same, with flags.                                                                    |
+| `include`               | no\*     | Include any event that reaches this point. The value is ignored.                     |
 
 \* at least one filter parameter is required.
 
-- **Order matters**: the parameters form the pipeline in the order they appear
-  in the URL. `input` is not part of the pipeline; its position is irrelevant.
+- Filter parameters form the pipeline in URL order. `input` and `calendar-name`
+  are not rules, so their positions do not matter.
 - One regex per occurrence; repeat the parameter name for multiple rules. No
   comma separation.
-- Exactly one `input` is allowed.
-- Any other (unknown) query parameter → `400`.
+- Exactly one `input` is required. `calendar-name` may occur at most once.
+- Unknown query parameters make the request a `400`.
+- With default options, a request may contain at most 64 filter rules. Each
+  decoded regex may contain at most 2,048 UTF-8 bytes. A decoded `calendar-name`
+  may contain at most 1,024 UTF-8 bytes. A whitespace-only name is valid. U+000A
+  uses RFC TEXT newline escaping; control characters that RFC TEXT cannot
+  represent make the request a `400`.
+- Before routing or parsing, the handler measures the UTF-8 byte length of the
+  serialized `request.url` string, including percent encoding. The default
+  maximum is 16,384 bytes; exceeding the configured maximum makes the request a
+  `414`.
+
+#### Upstream URL policy
+
+The handler parses `input` with the standard URL parser, converts `webcal` to
+`https`, removes the fragment, and uses the resulting `href` as the cache key.
+The URL parser lowercases the scheme and host and removes a default port. After
+parsing, the handler applies no extra path or query normalization. The
+serialized query keeps its parameter order. URL credentials make the request a
+`400`.
+
+By default, every fetch target must resolve only to globally routable unicast IP
+addresses. The check rejects loopback, private-use, link-local, carrier-grade
+NAT, multicast, documentation, reserved, unspecified, and IPv4-mapped forms of
+those addresses. A hostname with a mix of public and non-public answers is also
+rejected. The handler repeats this check at every redirect and revalidation.
+
+`allowPrivateUpstreams: true` disables only the address-range check for a
+trusted local deployment. It is a handler option, never a query parameter, and
+it applies to the initial URL and every redirect. It does not permit URL
+credentials or non-HTTP schemes. The packaged localhost example enables this
+option. A public deployment should not.
+
+DNS can change between validation and connection. A deployment exposed to
+hostile clients must also enforce network-level egress controls.
+
+#### Accepted ICS input
+
+The body after HTTP content decoding must meet these rules:
+
+- It does not exceed the configured byte limit, 10 MiB by default, and is valid
+  UTF-8. A leading UTF-8 BOM is allowed and preserved.
+- It contains exactly one `VCALENDAR`, with only blank lines before or after it.
+  `VERSION` and `PRODID` are not required.
+- Every non-blank line inside `VCALENDAR` is a parseable content line. Folding
+  follows RFC 5545. Physical lines may end with CRLF or LF, but not a lone CR.
+- `BEGIN` and `END` nesting is balanced. Property and component names are
+  case-insensitive.
+- Every `VEVENT` is a direct child of `VCALENDAR`. Its whole raw block includes
+  any balanced child components such as `VALARM`.
+
+Unknown properties and balanced component types are accepted and preserved. The
+upstream `Content-Type` does not decide whether the body is an ICS.
 
 #### Response
 
 - `200` with the filtered calendar:
   - `Content-Type: text/calendar; charset=utf-8`
   - `Content-Disposition: inline; filename="calendar.ics"`
-  - `ETag` (strong, content-based). Re-polling with `If-None-Match` returns
-    `304 Not Modified`.
+  - A quoted strong `ETag`: the lowercase hexadecimal SHA-256 digest of the
+    exact response bytes.
   - `Cache-Control: no-cache`
   - `Access-Control-Allow-Origin: *`
-- If all events are filtered out, the response is a valid **empty calendar**
-  (the `VCALENDAR` wrapper and `VTIMEZONE` components are kept, no `VEVENT`s),
-  still `200`.
-- The calendar's display name is the upstream's `X-WR-CALNAME` (or the URL, if
-  the upstream has none).
+  - `Access-Control-Expose-Headers: ETag, Content-Disposition`
+- If all events are filtered out, the response keeps the accepted `VCALENDAR`
+  envelope and components such as `VTIMEZONE`, but has no `VEVENT`s. It is still
+  a `200`. If the upstream omitted optional or normally required metadata, the
+  handler does not add it.
+- Without `calendar-name`, all upstream `X-WR-CALNAME` properties remain
+  unchanged. No fallback name is added.
+- With `calendar-name`, the handler emits exactly one top-level `X-WR-CALNAME`.
+  It RFC 5545 TEXT-escapes the value and folds the line at 75 octets. It
+  replaces the first existing logical property in place, including its
+  parameters and folded continuation lines, and removes any others. Property
+  name matching is case-insensitive. If none exists, it inserts the property
+  before the first top-level calendar component, or before `END:VCALENDAR` if
+  the calendar has no components. The new property starts with `X-WR-CALNAME:`.
+  Each physical line contains at most 75 UTF-8 octets; a continuation starts
+  with one space, and a fold never splits a UTF-8 code point. The property uses
+  the line ending from `BEGIN:VCALENDAR`; all other retained bytes stay
+  unchanged.
+- `HEAD` performs the same validation, fetch, filtering, and ETag calculation as
+  `GET`, and returns the same representation headers without a body.
+- `If-None-Match` follows HTTP semantics, including validator lists, weak
+  comparison, and `*`. A match after normal processing returns a bodyless `304`
+  with `ETag`, `Cache-Control`, and CORS headers.
+- `OPTIONS /webcal` returns a bodyless `204` without validating the query or
+  fetching upstream. It includes:
+  - `Access-Control-Allow-Methods: GET, HEAD, OPTIONS`
+  - `Access-Control-Allow-Headers: If-None-Match`
 
 #### Errors
 
-Errors are JSON: `{"error": "<message>", "docs": "<link to this README>"}`.
+Errors use `application/json; charset=utf-8` and this schema:
 
-| Status | When                                                                                                                                                                                                                    |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | `input` missing or empty; no filter parameters; unknown parameter; more than one `input`; `input` is not an `http(s)`/`webcal` URL; the `RegExp` constructor rejects the pattern or flags (including the `g`/`y` flags) |
-| `404`  | Any other path.                                                                                                                                                                                                         |
-| `405`  | Any method other than `GET`/`HEAD` on `/webcal`.                                                                                                                                                                        |
-| `502`  | Upstream unreachable, non-`2xx` response, or not a parseable ICS.                                                                                                                                                       |
-| `504`  | Upstream fetch timed out.                                                                                                                                                                                               |
+```json
+{
+  "error": "<non-empty human-readable message>",
+  "docs": "https://github.com/hugojosefson/calendar-filter#api"
+}
+```
+
+The message wording is not API-stable.
+
+| Status | When                                                                                                                                                                                                                 |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | Missing, repeated, empty, unknown, or invalid query data; a rule or decoded-value limit is exceeded; RE2 rejects a pattern or flags; the initial URL has the wrong scheme, credentials, or a non-public destination. |
+| `404`  | Any other path.                                                                                                                                                                                                      |
+| `405`  | Any method other than `GET`, `HEAD`, or `OPTIONS` on `/webcal`.                                                                                                                                                      |
+| `414`  | The encoded request URL exceeds the configured limit.                                                                                                                                                                |
+| `500`  | An unexpected handler failure.                                                                                                                                                                                       |
+| `502`  | DNS or connection failure; unsafe or excessive redirect; non-`2xx` upstream response; upstream body over the configured limit; invalid UTF-8; or malformed ICS.                                                      |
+| `504`  | The fetch, including redirects and body reading, exceeds the configured deadline.                                                                                                                                    |
+
+Every response includes `Access-Control-Allow-Origin: *` and
+`Access-Control-Expose-Headers: ETag, Content-Disposition`. Errors also include
+`Cache-Control: no-store`. A `405` includes `Allow: GET, HEAD, OPTIONS`. Error
+responses to `HEAD` have the same status and representation headers as `GET`
+errors but no body.
 
 #### Caching and limits
 
-- Upstream responses are cached in memory per `input` URL for up to 5 minutes
-  (or the upstream's `max-age`, if shorter). Conditional revalidation
-  (`ETag`/`Last-Modified`) is used, so the upstream is not re-downloaded unless
-  it changed. Event data can therefore be up to 5 minutes stale.
-- Upstream fetch: 10-second timeout, at most 5 redirects, at most 10 MiB.
-- Concurrent requests for the same `input` share one upstream fetch.
-- The server is stateless and logs nothing. Note that the `input` URL (including
-  any query string it has) is part of your subscription URL.
+- The handler keeps upstream bodies in a process-local LRU cache keyed by the
+  normalized initial URL. The budget, 50 MiB by default, counts stored body
+  bytes. It evicts least-recently-used entries before storing a new one. A
+  response larger than the configured cache budget is still served but not
+  retained.
+- One handler instance shares this cache across its requests, so upstream
+  shared-cache directives apply.
+- The configured cache TTL, five minutes by default, is a ceiling. `s-maxage`
+  takes precedence over `max-age`; either may shorten the TTL, and a valid `Age`
+  reduces the remaining freshness. `no-cache` and zero max-age store the body
+  but require immediate revalidation. `no-store` and `private` responses are not
+  retained. `Expires` and malformed cache directives are ignored.
+  `must-revalidate` adds no behavior because the handler never serves stale
+  content.
+- Stale cache entries revalidate with the upstream `ETag` and `Last-Modified`
+  when available. A `304` reuses the body. Headers present on the `304` replace
+  the stored `ETag`, `Last-Modified`, `Cache-Control`, `Date`, and `Age`; absent
+  fields keep their stored values. The handler recalculates freshness at
+  receipt. Without validators, it fetches the full body again.
+- Revalidation failures return `502` or `504`; the handler never serves stale
+  content after an error.
+- By default, upstream fetches have a 10-second timeout and a 10 MiB
+  decoded-body limit. The handler follows at most five redirects. Every hop must
+  use HTTP or HTTPS and pass the address policy. Exceeding the configured
+  redirect count is a `502`.
+- Concurrent requests for the same normalized URL share one active fetch, even
+  when the completed response cannot be cached. Filters and `calendar-name` do
+  not affect the upstream cache key.
+- The handler has no persistent storage and logs nothing. The process-local
+  cache disappears when the instance stops. The full `input` URL, including its
+  query string, remains part of the calendar subscription URL.
 
 ## Examples
 
 ### Your kid's group, out of a club calendar
 
-[`readme/example-calendar.ics`](example-calendar.ics) is a fictional club
-calendar in the style of real club exports: most events are tagged
+[`readme/example-calendar.ics`](readme/example-calendar.ics) is a fictional club
+calendar in the style of real club exports. Most events are tagged
 `// P15 - BK Exempel`, `// F15 - BK Exempel`, and so on, while a few events
 (senior team, club-wide) have no group tag at all.
 
@@ -254,13 +375,28 @@ The package exports the handler, so you can run it on
 [Deno Deploy](https://deno.com/deploy), `Deno.serve`, or any adapter that
 accepts a `(request: Request) => Promise<Response>` function:
 
-- `calendarFilterHandler: (request: Request) => Promise<Response>` — ready to
-  use.
-- `createCalendarFilterHandler(options?)` — returns a handler with options:
-  - `fetchImpl?: typeof fetch` — injectable fetch (for tests).
-  - `upstreamTimeoutMs?: number` — default `10000`.
-  - `maxUpstreamBytes?: number` — default `10485760` (10 MiB).
-  - `upstreamCacheTtlMs?: number` — default `300000` (5 minutes).
+- `calendarFilterHandler: (request: Request) => Promise<Response>` uses the
+  defaults below.
+- `createCalendarFilterHandler(options?)` returns a configured handler.
+
+| Option                            | Default    | Meaning                                                                   |
+| --------------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `fetchImpl?: typeof fetch`        | `fetch`    | Injectable upstream fetch function.                                       |
+| `upstreamTimeoutMs?: number`      | `10000`    | Deadline for redirects and body reading.                                  |
+| `maxUpstreamRedirects?: number`   | `5`        | Maximum followed redirects. Zero disables redirects.                      |
+| `maxUpstreamBytes?: number`       | `10485760` | Maximum decoded upstream body bytes.                                      |
+| `upstreamCacheTtlMs?: number`     | `300000`   | Freshness ceiling. Zero requires immediate revalidation.                  |
+| `maxUpstreamCacheBytes?: number`  | `52428800` | LRU body-byte budget. Zero disables the completed-response cache.         |
+| `maxRequestUrlBytes?: number`     | `16384`    | Maximum encoded request URL bytes.                                        |
+| `maxFilterRules?: number`         | `64`       | Maximum filter rules per request.                                         |
+| `maxRegexBytes?: number`          | `2048`     | Maximum UTF-8 bytes per decoded pattern.                                  |
+| `maxCalendarNameBytes?: number`   | `1024`     | Maximum UTF-8 bytes in the decoded name override.                         |
+| `allowPrivateUpstreams?: boolean` | `false`    | Allow non-public upstream addresses on every hop. Trusted local use only. |
+
+`createCalendarFilterHandler` validates options synchronously. Numeric options
+must be finite safe integers. Timeouts and byte, URL, rule, regex, and name
+limits must be positive. Redirect count, cache TTL, and cache bytes may be zero.
+An invalid option throws `TypeError`.
 
 To deploy on Deno Deploy, the whole app is:
 
@@ -278,16 +414,16 @@ deno deploy --project calendar-filter deno-deploy.ts
 ## Installation
 
 ```sh
-# add as dependency to your project
+# Add the package to your project.
 deno add jsr:@hugojosefson/calendar-filter
 
-# ...or...
+# Or download the source.
 
-# create and enter a directory for the script
+# Create and enter its directory.
 mkdir -p "calendar-filter"
-cd       "calendar-filter"
+cd "calendar-filter"
 
-# download+extract the script, into current directory
+# Download and extract the source into the current directory.
 curl -fsSL "https://github.com/hugojosefson/calendar-filter/tarball/main" \
   | tar -xzv --strip-components=1
 ```
@@ -295,19 +431,41 @@ curl -fsSL "https://github.com/hugojosefson/calendar-filter/tarball/main" \
 ## Example usage
 
 ```typescript
-import { calendarFilterHandler } from "@hugojosefson/calendar-filter";
+import { createCalendarFilterHandler } from "@hugojosefson/calendar-filter";
 
 const port = Number(Deno.env.get("PORT") ?? 9000);
-Deno.serve({ port }, calendarFilterHandler);
+const handler = createCalendarFilterHandler({
+  // The demo fetches from localhost. Never enable this on a public server.
+  allowPrivateUpstreams: true,
+});
+
+Deno.serve({ port }, handler);
 console.log(`calendar-filter listening on http://localhost:${port}/webcal`);
 ```
 
-You may run the above example with:
+Run the example with:
 
 ```sh
 deno run --allow-net --allow-env jsr:@hugojosefson/calendar-filter/example-usage
 ```
 
-For further usage examples, see the tests:
+## Acceptance criteria
 
-- [test/placeholder.test.ts](test/placeholder.test.ts)
+The implementation must pass `deno task all` and cover these behaviors without
+live network access:
+
+- Query parsing preserves rule order across repeated and flagged parameters.
+  Tests cover default deny, empty patterns, every field, invalid RE2 syntax and
+  flags, duplicate inputs, unknown parameters, `calendar-name`, and every
+  request limit.
+- ICS fixtures cover CRLF and LF, folding, UTF-8, TEXT escapes, repeated fields,
+  nested `VALARM`, balanced unknown components, malformed envelopes, empty
+  calendars, and byte-for-byte preservation of retained data.
+- Name override tests cover replacement, duplicate removal, insertion, escaping,
+  UTF-8 folding, and line-ending preservation.
+- HTTP tests cover `GET`, `HEAD`, `OPTIONS`, `304`, `404`, `405`, `414`, CORS,
+  error JSON, content headers, and exact SHA-256 ETags.
+- Mocked upstream tests cover timeout, redirect limits and policy, public and
+  private address checks, decoded-body limits, non-`2xx` responses, conditional
+  revalidation, restrictive cache directives, `Age`, LRU eviction, failed
+  revalidation, and shared active fetches.

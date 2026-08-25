@@ -2,65 +2,77 @@
 import { dirname, relative, resolve } from "@std/path";
 
 /**
- * This program generates the README.md for the root directory.
+ * Generates the root README from the source path in the first argument.
  *
- * It reads from the file referred to by this program's first argument, and writes to stdout.
+ * The generator expands these directives:
+ * - A line containing `@@include(filename)` is replaced with the referenced
+ *   file, resolved relative to the current input file.
+ * - A shebang at the start of an input file is omitted.
+ * - Space-free relative destinations in inline Markdown links are rewritten
+ *   relative to the repository root.
+ * - Relative TypeScript imports become package imports from the repository root.
  *
- * Based on what it sees when it reads from the file, it may also read files from
- * the filesystem.
- *
- * It reads text, and writes text. The only syntax it understands is the
- * following directives:
- * - Any line that includes the text `@@include(filename)` will be replaced
- *   with the contents of the file, relative to the currently parsed file. The
- *   whole line will be replaced.
- * - Any shebang line at the start of any input file, will be removed.
- * - For any occurrence of /\sfrom\s+"(\..*)"/ the path will be extracted and resolved from the currently parsed file, and then resolved to a relative path from the root of the git repo, then the whole `from` clause will be replaced with `from "@${username}/${projectName}/${relativePathFromGitRoot}"`.
- * - The resulting text will be written to stdout.
+ * The generated Markdown is written to stdout.
  */
 async function main() {
-  const inputFilePath =
-    (new URL(Deno.args[0], `file://${Deno.cwd()}/`)).pathname;
+  const inputFilePath = await Deno.realPath(
+    (new URL(Deno.args[0], `file://${Deno.cwd()}/`)).pathname,
+  );
   const inputText = await Deno.readTextFile(inputFilePath);
-  const outputText = await processText(inputText, inputFilePath);
+  const outputText = await processText(
+    inputText,
+    inputFilePath,
+    new Set([inputFilePath]),
+  );
   console.log(outputText);
 }
 
 async function processText(
   inputText: string,
   inputFilePath: string,
+  includeStack: ReadonlySet<string>,
 ): Promise<string> {
   const lines = inputText.split("\n");
-  // skip any first line with shebang
+  // Included scripts must not add a shebang to the README.
   if (lines[0]?.startsWith("#!")) {
     lines.shift();
   }
-  const forInclude = processLineForInclude(inputFilePath);
+  const forInclude = processLineForInclude(inputFilePath, includeStack);
+  const forLink = processLineForMarkdownLink(inputFilePath);
   const forImport = processLineForImport(inputFilePath);
   return (await Promise.all(lines.map(
     async function (line: string) {
-      const lines1: string[] = (await forInclude(line)).split("\n");
-      const lines2: string[] = lines1.map(forImport);
-      return lines2.join("\n");
+      const included = await forInclude(line);
+      if (included !== undefined) {
+        return included;
+      }
+      return forImport(forLink(line));
     },
   ))).join("\n");
 }
 
 function processLineForInclude(
   inputFilePath: string,
-): (line: string) => Promise<string> {
-  return async (line: string): Promise<string> => {
+  includeStack: ReadonlySet<string>,
+): (line: string) => Promise<string | undefined> {
+  return async (line: string): Promise<string | undefined> => {
     const match = line.match(/@@include\((.*)\)/);
     if (match) {
       const matchedPath = match[1];
       const includeFilePath = resolve(dirname(inputFilePath), matchedPath);
       const resolvedIncludeFilePath = await Deno.realPath(includeFilePath);
+      if (includeStack.has(resolvedIncludeFilePath)) {
+        throw new Error(`Circular README include: ${resolvedIncludeFilePath}`);
+      }
+      const nextIncludeStack = new Set(includeStack);
+      nextIncludeStack.add(resolvedIncludeFilePath);
       return await processText(
         await Deno.readTextFile(resolvedIncludeFilePath),
         resolvedIncludeFilePath,
+        nextIncludeStack,
       );
     }
-    return line;
+    return undefined;
   };
 }
 
@@ -88,6 +100,31 @@ function processLineForImport(
     }
     return line;
   };
+}
+
+function processLineForMarkdownLink(
+  inputFilePath: string,
+): (line: string) => string {
+  return (line: string): string =>
+    line.replaceAll(
+      /(\]\()([^\s)]+)((?:\s+"[^"]*")?\))/g,
+      (match: string, start: string, target: string, end: string): string => {
+        if (
+          target.startsWith("#") || target.startsWith("/") ||
+          /^[a-z][a-z0-9+.-]*:/i.test(target)
+        ) {
+          return match;
+        }
+
+        const resolved = new URL(target, `file://${inputFilePath}`);
+        const gitRoot = (new URL("../", import.meta.url)).pathname;
+        const rewritten = relative(gitRoot, resolved.pathname).replaceAll(
+          "\\",
+          "/",
+        );
+        return `${start}${rewritten}${resolved.search}${resolved.hash}${end}`;
+      },
+    );
 }
 
 if (import.meta.main) {

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# add as dependency to your project
+# Add the package to your project.
 deno add jsr:@hugojosefson/calendar-filter
 
-# ...or...
+# Or download the source.
 
-# create and enter a directory for the script
+# Create and enter its directory.
 mkdir -p "calendar-filter"
-cd       "calendar-filter"
+cd "calendar-filter"
 
-# download+extract the script, into current directory
+# Download and extract the source into the current directory.
 curl -fsSL "https://github.com/hugojosefson/calendar-filter/tarball/main" \
   | tar -xzv --strip-components=1
