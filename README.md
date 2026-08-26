@@ -435,7 +435,7 @@ import { createCalendarFilterHandler } from "@hugojosefson/calendar-filter";
 
 const port = Number(Deno.env.get("PORT") ?? 9000);
 const handler = createCalendarFilterHandler({
-  // The demo fetches from localhost. Never enable this on a public server.
+  // The demo may fetch from localhost. Never enable this on a public server.
   allowPrivateUpstreams: true,
 });
 
