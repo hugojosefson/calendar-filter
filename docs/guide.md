@@ -10,12 +10,22 @@ existing `http`, `https`, or `webcal` result URL for further editing.
 The forms remain usable when JavaScript is unavailable. With JavaScript, text
 edits update after a short delay without adding history entries, while rule
 additions, removals, reordering, mode changes, and submitted updates add history
-entries. Back and forward reload server-rendered state.
+entries. Back and forward reload server-rendered state. Once an automatic update
+succeeds, the builder removes the now-redundant Update preview buttons.
+
+Numbered rule cards show evaluation order. Drag a card by its handle, or use its
+arrow buttons, to reorder it. A catch-all should normally be last because rules
+after it cannot run. The builder warns about unreachable rules, offers only one
+catch-all button, and inserts newly added text filters before an existing
+catch-all.
 
 Text mode quotes its value as a literal RE2 expression and exposes only the `i`
 flag. Regex mode supports `i`, `m`, `s`, and `u`, validates with RE2
 immediately, and uses a syntax-highlighted CodeMirror editor. A regex can switch
-to text mode only when it recognizes exactly one literal string.
+to text mode only when it recognizes exactly one literal string. The editor
+hides the redundant capture group used to preserve regex mode during automatic
+pattern updates. Editing another field or submitting the form allows canonical
+literal patterns to return to text mode.
 
 ## Rule pipeline
 

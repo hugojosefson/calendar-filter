@@ -1,18 +1,18 @@
 /** @module Progressive builder enhancement and local CodeMirror RE2 editing. */
 
-import { EditorState } from "@codemirror/state";
-import {
-  Decoration,
-  type DecorationSet,
-  EditorView,
-  keymap,
-  ViewPlugin,
-  type ViewUpdate,
-} from "@codemirror/view";
-import { RE2JS } from "re2js";
+import type { EditorView } from "@codemirror/view";
+import { installRegexEditor } from "./browser/regex-editor.ts";
+import { installRuleDragging } from "./browser/rule-drag.ts";
+import { canonicalText } from "./text.ts";
 
 /** Browser-history behavior for one server-backed update. */
 type NavigationKind = "push" | "replace";
+
+/** Optional form-data changes for one automatic navigation. */
+type NavigationOptions = {
+  operation?: string;
+  preserveRegexName?: string;
+};
 
 /** Name and caret needed to restore one native or CodeMirror field. */
 type FocusState = {
@@ -23,7 +23,9 @@ type FocusState = {
 let controller: AbortController | undefined;
 let timer: number | undefined;
 let replacing = false;
+let automaticUpdatesVerified = false;
 const editors = new WeakMap<HTMLInputElement, EditorView>();
+const dirtyInputs = new WeakSet<HTMLInputElement>();
 
 /** Installs event delegation again after every server-rendered main replacement. */
 function enhance(): void {
@@ -32,14 +34,26 @@ function enhance(): void {
       "input[data-regex]",
     )
   ) {
-    installRegexEditor(input);
+    enhanceRegexEditor(input);
   }
-  const main = document.querySelector("main");
+  const main = document.querySelector<HTMLElement>("main");
   main?.addEventListener("submit", submit);
   main?.addEventListener("input", input);
   main?.addEventListener("change", change);
   main?.addEventListener("keydown", keydown);
   main?.addEventListener("focusout", blur);
+  if (main) {
+    installRuleDragging(main, (form, source, destination) => {
+      navigate(form, null, "push", {
+        operation: `move-${source}-${destination}`,
+      });
+    });
+  }
+  if (automaticUpdatesVerified) {
+    for (const button of main?.querySelectorAll("[data-manual-update]") ?? []) {
+      button.remove();
+    }
+  }
 }
 
 /** Serializes a form plus clicked submitter and follows its canonical redirect. */
@@ -47,12 +61,17 @@ async function navigate(
   form: HTMLFormElement,
   submitter: HTMLElement | null,
   kind: NavigationKind,
+  options: NavigationOptions = {},
 ): Promise<void> {
   globalThis.clearTimeout(timer);
   const data = new FormData(form);
   if (submitter instanceof HTMLButtonElement && submitter.name) {
     data.set(submitter.name, submitter.value);
   }
+  if (options.operation !== undefined) {
+    data.set("operation", options.operation);
+  }
+  preserveRegexMode(data, options.preserveRegexName);
   const url = new URL(form.action, location.href);
   url.search = new URLSearchParams(
     [...data].filter((entry): entry is [string, string] =>
@@ -86,6 +105,7 @@ async function navigate(
       "",
       response.url,
     );
+    automaticUpdatesVerified = true;
     replacing = true;
     try {
       current.replaceWith(next);
@@ -106,9 +126,13 @@ function scheduleNavigation(
   form: HTMLFormElement,
   kind: NavigationKind,
   delay: number,
+  options: NavigationOptions = {},
 ): void {
   globalThis.clearTimeout(timer);
-  timer = globalThis.setTimeout(() => navigate(form, null, kind), delay);
+  timer = globalThis.setTimeout(
+    () => navigate(form, null, kind, options),
+    delay,
+  );
 }
 
 /** Handles normal submissions; ordinary Enter remains a neutral update. */
@@ -124,7 +148,31 @@ function input(event: Event): void {
   if (!target.matches("input[data-editable]") || !target.validity.valid) {
     return;
   }
-  scheduleNavigation(target.form!, "replace", 300);
+  dirtyInputs.add(target);
+  scheduleNavigation(target.form!, "replace", 300, {
+    preserveRegexName: target.matches("[data-regex]") ? target.name : undefined,
+  });
+}
+
+/** Keeps an automatically edited literal in regex mode across its URL reload. */
+function preserveRegexMode(
+  data: FormData,
+  name: string | undefined,
+): void {
+  if (name === undefined) {
+    return;
+  }
+  const source = data.get(name);
+  if (typeof source !== "string") {
+    return;
+  }
+  const flagPrefix = name.replace(/pattern$/, "flag-");
+  const flags = "imsu".split("").filter((flag) =>
+    data.has(`${flagPrefix}${flag}`)
+  ).join("");
+  if (canonicalText(source, flags) !== undefined) {
+    data.set(name, `(${source})`);
+  }
 }
 
 /** Pushes structural controls immediately while editing remains replace-only. */
@@ -151,7 +199,8 @@ function keydown(event: KeyboardEvent): void {
 function blur(event: FocusEvent): void {
   const target = event.target as HTMLInputElement;
   if (
-    !replacing && target.matches("input[data-editable]") &&
+    !replacing && dirtyInputs.has(target) &&
+    target.matches("input[data-editable]") &&
     target.validity.valid
   ) {
     scheduleNavigation(target.form!, "replace", 0);
@@ -195,177 +244,24 @@ function restoreFocus(focus: FocusState | undefined): void {
     return;
   }
   input.focus();
-  input.setSelectionRange(focus.caret, focus.caret);
-}
-
-/** Compiles with server RE2 flags; accepted `u` has no RE2JS option bit. */
-function valid(source: string, flags: string): boolean {
-  try {
-    let options = 0;
-    if (flags.includes("i")) {
-      options |= RE2JS.CASE_INSENSITIVE;
-    }
-    if (flags.includes("m")) {
-      options |= RE2JS.MULTILINE;
-    }
-    if (flags.includes("s")) {
-      options |= RE2JS.DOTALL;
-    }
-    RE2JS.compile(source, options);
-    return true;
-  } catch {
-    return false;
+  if (input.selectionStart !== null) {
+    input.setSelectionRange(focus.caret, focus.caret);
   }
 }
 
-/** Produces lightweight RE2 token decorations without changing the expression. */
-function regexDecorations(view: EditorView): DecorationSet {
-  const source = view.state.doc.toString();
-  const decorations = [];
-  for (let index = 0; index < source.length; index++) {
-    const character = source[index];
-    if (character === "\\") {
-      const end = Math.min(index + 2, source.length);
-      decorations.push(
-        Decoration.mark({ class: "cm-re2-escape" }).range(index, end),
-      );
-      index = end - 1;
-      continue;
-    }
-    if (character === "[") {
-      let end = index + 1;
-      while (end < source.length) {
-        if (source[end] === "\\") {
-          end += 2;
-          continue;
-        }
-        end++;
-        if (source[end - 1] === "]") {
-          break;
-        }
+/** Connects one regex editor to server navigation and focus restoration. */
+function enhanceRegexEditor(input: HTMLInputElement): void {
+  const view = installRegexEditor(input, {
+    onBlur: () => {
+      if (!replacing && dirtyInputs.has(input)) {
+        scheduleNavigation(input.form!, "replace", 0, {
+          preserveRegexName: input.name,
+        });
       }
-      decorations.push(
-        Decoration.mark({ class: "cm-re2-class" }).range(index, end),
-      );
-      index = end - 1;
-      continue;
-    }
-    if (character === "(" || character === ")") {
-      decorations.push(
-        Decoration.mark({ class: "cm-re2-group" }).range(index, index + 1),
-      );
-      continue;
-    }
-    if (character === "*" || character === "+" || character === "?") {
-      decorations.push(
-        Decoration.mark({ class: "cm-re2-quantifier" }).range(
-          index,
-          index + 1,
-        ),
-      );
-      continue;
-    }
-    if (character === "{") {
-      const match = source.slice(index).match(/^\{\d+(?:,\d*)?\}\??/);
-      if (match) {
-        decorations.push(
-          Decoration.mark({ class: "cm-re2-quantifier" }).range(
-            index,
-            index + match[0].length,
-          ),
-        );
-        index += match[0].length - 1;
-      }
-      continue;
-    }
-    if ("^$|.".includes(character)) {
-      decorations.push(
-        Decoration.mark({ class: "cm-re2-operator" }).range(index, index + 1),
-      );
-    }
-  }
-  return Decoration.set(decorations, true);
-}
-
-/** Recomputes RE2 token highlighting after document changes. */
-const regexHighlight = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-
-    constructor(view: EditorView) {
-      this.decorations = regexDecorations(view);
-    }
-
-    update(update: ViewUpdate): void {
-      if (update.docChanged) {
-        this.decorations = regexDecorations(update.view);
-      }
-    }
-  },
-  { decorations: (plugin) => plugin.decorations },
-);
-
-/** Replaces a regex input while keeping its native form value synchronized. */
-function installRegexEditor(input: HTMLInputElement): void {
-  input.hidden = true;
-  const setValidity = (okay: boolean): void => {
-    input.setAttribute("aria-invalid", String(!okay));
-    view.dom.setAttribute("aria-invalid", String(!okay));
-    view.dom.classList.toggle("cm-invalid", !okay);
-    const error = input.parentElement?.querySelector<HTMLElement>(
-      "[data-regex-error]",
-    );
-    if (error) {
-      error.hidden = okay;
-    }
-  };
-  const update = (value: string): void => {
-    input.value = value;
-    input.setSelectionRange(value.length, value.length);
-    setValidity(valid(value, selectedFlags(input)));
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-  const view = new EditorView({
-    state: EditorState.create({
-      doc: input.value,
-      extensions: [
-        regexHighlight,
-        EditorView.contentAttributes.of({ "aria-label": "Pattern" }),
-        EditorView.domEventHandlers({
-          blur: () => {
-            if (!replacing) {
-              scheduleNavigation(input.form!, "replace", 0);
-            }
-          },
-        }),
-        keymap.of([{
-          key: "Enter",
-          run: () => {
-            navigate(input.form!, null, "push");
-            return true;
-          },
-        }]),
-        EditorView.updateListener.of((change) => {
-          if (change.docChanged) {
-            update(change.state.doc.toString());
-          }
-        }),
-      ],
-    }),
-    parent: input.parentElement!,
+    },
+    onEnter: () => navigate(input.form!, null, "push"),
   });
   editors.set(input, view);
-  view.dom.classList.add("cm-re2");
-  setValidity(valid(input.value, selectedFlags(input)));
-}
-
-/** Returns selected flag characters for the rule containing one pattern. */
-function selectedFlags(input: HTMLInputElement): string {
-  return [
-    ...input.form!.querySelectorAll<HTMLInputElement>(
-      `input[name^="${input.name.replace(/pattern$/, "flag-")}"]:checked`,
-    ),
-  ].map((field) => field.name.at(-1)).join("");
 }
 
 /** Reloads server-rendered state when the user traverses browser history. */

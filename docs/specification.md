@@ -15,12 +15,16 @@ existing result URL. Both return `303` to the canonical root query. The builder,
 forms, preview, and result URL work without JavaScript. `/builder.css` and
 `/builder.js` provide self-hosted Pico CSS and progressive CodeMirror/RE2
 enhancement. Enhanced text updates replace the current history entry after a
-short delay; structural actions and explicit submissions push entries.
+short delay; structural actions and explicit submissions push entries. Rules are
+numbered and can be reordered by drag handle or arrow controls. Pattern rules
+added through the UI go immediately before the first catch-all.
 
-Builder pages and assets use `Cache-Control: no-store`, a same-origin content
-security policy, `Referrer-Policy: no-referrer`, MIME sniffing and frame
-protections, and `X-Robots-Tag: noindex`. They accept only `GET` and `HEAD`;
-other methods return `405` with `Allow: GET, HEAD`.
+Builder pages and assets use `Cache-Control: no-store`, same-origin script and
+connection restrictions, `Referrer-Policy: no-referrer`, MIME sniffing and frame
+protections, and `X-Robots-Tag: noindex`. The policy permits local and data
+images plus inline styles required by CodeMirror, but not inline scripts.
+Builder routes accept only `GET` and `HEAD`; other methods return `405` with
+`Allow: GET, HEAD`.
 
 ## Request query
 
@@ -192,4 +196,5 @@ headers, and exact ETags; and mocked timeout, redirects, address policy, body
 limits, revalidation, cache directives and age, LRU eviction, fetch sharing, and
 failed revalidation. Browser tests cover native no-JavaScript forms, local
 assets, light and dark styles, debounced URL state, history traversal, RE2
-highlighting and validation, and single-line Enter and Tab behavior.
+highlighting and validation, drag ordering, single-line Enter and Tab behavior,
+and browser console errors.

@@ -15,6 +15,7 @@ import {
   encodeBuilderQuery,
   parseResultUrl,
 } from "../src/builder/codec.ts";
+import { previewEvents } from "../src/builder/preview-events.ts";
 
 const decode = (query: string) =>
   decodeBuilderQuery(new URLSearchParams(query));
@@ -201,4 +202,12 @@ Deno.test("builder retains invalid query rules and reports malformed API data", 
     ).length,
     1,
   );
+});
+
+Deno.test("preview reads only the top-level source calendar name", () => {
+  const preview = previewEvents(
+    "BEGIN:VCALENDAR\nX-WR-CALNAME:Top\\, level\nBEGIN:VTIMEZONE\nX-WR-CALNAME:Nested\nEND:VTIMEZONE\nBEGIN:VEVENT\nSUMMARY:Event\nEND:VEVENT\nEND:VCALENDAR\n",
+  );
+  assertEquals(preview.calendarName, "Top, level");
+  assertEquals(preview.count, 1);
 });

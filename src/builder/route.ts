@@ -58,9 +58,42 @@ async function rootResponse(
   const state = decodeBuilderQuery(url.searchParams);
   const filtered = await webcalHandler(webcalRequest(url, url.searchParams));
   const preview = !filtered.ok
-    ? { kept: 0, total: 0, events: [], error: await responseError(filtered) }
+    ? await failedPreview(
+      url,
+      state.input,
+      await responseError(filtered),
+      webcalHandler,
+    )
     : await successfulPreview(url, state.input, filtered, webcalHandler);
   return pageResponse(renderBuilderPage(url, state, preview), isHead);
+}
+
+/** Loads source metadata even when incomplete or invalid rules prevent filtering. */
+async function failedPreview(
+  base: URL,
+  input: string,
+  error: string,
+  webcalHandler: WebcalHandler,
+) {
+  const empty = { kept: 0, total: 0, events: [], error };
+  if (input === "") {
+    return empty;
+  }
+  const total = await webcalHandler(
+    webcalRequest(
+      base,
+      new URLSearchParams([["input", input], ["include", ""]]),
+    ),
+  );
+  if (!total.ok) {
+    return empty;
+  }
+  const source = previewEvents(await total.text());
+  return {
+    ...empty,
+    calendarName: source.calendarName,
+    total: source.count,
+  };
 }
 
 /** Builds preview counts after the filtered request succeeds. */
@@ -78,16 +111,19 @@ async function successfulPreview(
     ),
   );
   if (!total.ok) {
+    const filteredPreview = { count: parsed.count, events: parsed.events };
     return {
-      ...parsed,
+      ...filteredPreview,
       total: 0,
       kept: parsed.count,
       error: await responseError(total),
     };
   }
+  const source = previewEvents(await total.text());
   return {
     ...parsed,
-    total: previewEvents(await total.text()).count,
+    calendarName: source.calendarName,
+    total: source.count,
     kept: parsed.count,
   };
 }
@@ -176,7 +212,7 @@ function pageHeaders(contentType: string): Headers {
   return new Headers({
     "Cache-Control": "no-store",
     "Content-Security-Policy":
-      "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'none'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "Content-Type": contentType,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",

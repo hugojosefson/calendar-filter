@@ -6,36 +6,45 @@ import { unescapeIcsText } from "../calendar/text.ts";
 /** Safe-to-render subset of an event used by the builder preview. */
 export type PreviewEvent = { summary: string; start: string; location: string };
 
-/** Counts direct VEVENTs and retains at most `maximum` display fields. */
-export function previewEvents(source: string, maximum = 50): {
+/** Safe metadata read from the source VCALENDAR, before filtering changes it. */
+export type PreviewCalendar = {
+  calendarName?: string;
   count: number;
   events: PreviewEvent[];
-} {
+};
+
+/** Counts direct VEVENTs and retains at most `maximum` display fields. */
+export function previewEvents(source: string, maximum = 50): PreviewCalendar {
   const events: PreviewEvent[] = [];
   let count = 0;
-  let depth = 0;
+  let componentDepth = 0;
+  let calendarName: string | undefined;
   let event: PreviewEvent | undefined;
   for (const line of parseLogicalLines(source)) {
     const name = line.name.toUpperCase();
-    if (name === "BEGIN" && line.value.toUpperCase() === "VEVENT") {
-      depth++;
-      if (depth === 1) {
+    const value = line.value.toUpperCase();
+    if (name === "BEGIN") {
+      componentDepth++;
+      if (value === "VEVENT" && componentDepth === 2) {
         event = { summary: "", start: "", location: "" };
       }
       continue;
     }
-    if (name === "END" && line.value.toUpperCase() === "VEVENT") {
-      if (depth === 1 && event !== undefined) {
+    if (name === "END") {
+      if (value === "VEVENT" && componentDepth === 2 && event !== undefined) {
         count++;
         if (events.length < maximum) {
           events.push(event);
         }
         event = undefined;
       }
-      depth--;
+      componentDepth--;
       continue;
     }
-    if (depth !== 1 || event === undefined) {
+    if (componentDepth === 1 && name === "X-WR-CALNAME") {
+      calendarName ??= unescapeIcsText(line.value);
+    }
+    if (componentDepth !== 2 || event === undefined) {
       continue;
     }
     if (name === "SUMMARY") {
@@ -48,5 +57,5 @@ export function previewEvents(source: string, maximum = 50): {
       event.location ||= unescapeIcsText(line.value);
     }
   }
-  return { count, events };
+  return { calendarName, count, events };
 }

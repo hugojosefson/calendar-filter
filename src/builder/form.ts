@@ -64,13 +64,21 @@ export function applyBuilderOperation(
   operation: string | null,
 ): BuilderState {
   if (operation === "add-text") {
-    return addBuilderRule(state);
+    return addBuilderRule(state, undefined, patternInsertionIndex(state));
   }
   if (operation === "add-exclude-text") {
-    return addBuilderRule(state, describePattern("exclude", "text", "", ""));
+    return addBuilderRule(
+      state,
+      describePattern("exclude", "text", "", ""),
+      patternInsertionIndex(state),
+    );
   }
   if (operation === "add-all") {
     return addBuilderRule(state, { kind: "all", action: "include" });
+  }
+  const move = /^move-(\d+)-(\d+)$/.exec(operation ?? "");
+  if (move !== null) {
+    return moveBuilderRule(state, Number(move[1]), Number(move[2]));
   }
   const match = /^(remove|up|down|mode-text|mode-regex)-(\d+)$/.exec(
     operation ?? "",
@@ -91,6 +99,12 @@ export function applyBuilderOperation(
     default:
       return setBuilderRuleMode(state, index, "regex");
   }
+}
+
+/** Places new pattern rules before the first catch-all rule. */
+function patternInsertionIndex(state: BuilderState): number {
+  const index = state.rules.findIndex((rule) => rule.kind === "all");
+  return index === -1 ? state.rules.length : index;
 }
 
 /** Converts an untrusted form count to a bounded non-negative integer. */

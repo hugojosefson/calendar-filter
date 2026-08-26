@@ -2,7 +2,7 @@ import { assert, assertEquals, assertMatch } from "@std/assert";
 import { createCalendarFilterHandler } from "../mod.ts";
 
 const source =
-  "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Keep\\, me\nDTSTART:20260101\nLOCATION:Here\\nNow\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Drop\nEND:VEVENT\nEND:VCALENDAR\n";
+  "BEGIN:VCALENDAR\nX-WR-CALNAME:Source\\, Calendar\nBEGIN:VEVENT\nSUMMARY:Keep\\, me\nDTSTART:20260101\nLOCATION:Here\\nNow\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Drop\nEND:VEVENT\nEND:VCALENDAR\n";
 
 function handler(
   fetchImpl: typeof fetch = () => Promise.resolve(new Response(source)),
@@ -29,7 +29,7 @@ Deno.test("empty root is a secure builder page without an upstream request", asy
   assertEquals(response.headers.get("X-Content-Type-Options"), "nosniff");
   assertEquals(
     response.headers.get("Content-Security-Policy"),
-    "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'none'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
   );
 });
 
@@ -72,7 +72,34 @@ Deno.test("root preview shares its upstream cache and escapes event text", async
   const body = await response.text();
   assertMatch(body, /1 of 2 events kept/);
   assert(body.includes("Keep, me"));
+  assert(body.includes('placeholder="Source, Calendar"'));
   assertEquals(calls, 1);
+});
+
+Deno.test("builder numbers ordered rules and explains catch-all reachability", async () => {
+  const response = await handler()(
+    new Request(
+      "https://filter.example/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex=First&include=&exclude-regex=Last",
+    ),
+  );
+  const body = await response.text();
+  assert(body.includes("Rule 1"));
+  assert(body.includes("Rule 2"));
+  assert(body.includes("Rule 3"));
+  assertEquals(body.match(/data-drag-handle/g)?.length, 3);
+  assert(body.includes("This rule has no effect. Rule 2 matches every event"));
+  assert(body.includes("Move it to the end so later rules can run"));
+  assert(!body.includes('value="add-all"'));
+});
+
+Deno.test("builder shows generated regex wrappers only in stored state", async () => {
+  const body = await (await handler()(
+    new Request(
+      "https://filter.example/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex=%28plain%29",
+    ),
+  )).text();
+  assert(body.includes('data-stored-pattern="(plain)"'));
+  assertMatch(body, /data-regex[^>]+value="plain"/);
 });
 
 Deno.test("builder makes a neutral update the first submit control", async () => {
@@ -142,6 +169,30 @@ Deno.test("build removes and reorders submitted rules", async () => {
   assertEquals(
     move.headers.get("Location"),
     "/?input=https%3A%2F%2Fcalendar.example%2Ffeed&exclude-regex=second&include-regex=first",
+  );
+  const drag = await handler()(new Request(`${base}&operation=move-0-1`));
+  assertEquals(
+    drag.headers.get("Location"),
+    "/?input=https%3A%2F%2Fcalendar.example%2Ffeed&exclude-regex=second&include-regex=first",
+  );
+});
+
+Deno.test("new pattern rules are inserted before the first catch-all", async () => {
+  const base =
+    "https://filter.example/build?input=https%3A%2F%2Fcalendar.example%2Ffeed&rule-count=1&rule-0-kind=all";
+  const include = await handler()(
+    new Request(`${base}&operation=add-text`),
+  );
+  assertEquals(
+    include.headers.get("Location"),
+    "/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex=&include=",
+  );
+  const exclude = await handler()(
+    new Request(`${base}&operation=add-exclude-text`),
+  );
+  assertEquals(
+    exclude.headers.get("Location"),
+    "/?input=https%3A%2F%2Fcalendar.example%2Ffeed&exclude-regex=&include=",
   );
 });
 

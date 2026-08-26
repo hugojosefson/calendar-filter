@@ -1,24 +1,27 @@
 /** @module Server-rendered builder page. */
 
 import { buildResultUrl } from "./codec.ts";
-import { canCompile } from "./text.ts";
-import type { BuilderRule, BuilderState } from "./types.ts";
+import { escapeHtml } from "./html.ts";
 import type { PreviewEvent } from "./preview-events.ts";
+import { renderRules } from "./rules-page.ts";
+import type { BuilderState } from "./types.ts";
 
 const docs = "https://github.com/hugojosefson/calendar-filter/tree/main/docs";
-const guide =
-  "https://github.com/hugojosefson/calendar-filter/blob/main/docs/guide.md";
+
+/** Optional preview and source metadata rendered with the builder. */
+type BuilderPreview = {
+  kept: number;
+  total: number;
+  events: PreviewEvent[];
+  calendarName?: string;
+  error?: string;
+};
 
 /** Renders escaped builder state and optional preview into a complete HTML document. */
 export function renderBuilderPage(
   base: URL,
   state: BuilderState,
-  preview?: {
-    kept: number;
-    total: number;
-    events: PreviewEvent[];
-    error?: string;
-  },
+  preview?: BuilderPreview,
 ): string {
   const result = buildResultUrl(base, state).href.replace(
     /^https?:/,
@@ -30,6 +33,7 @@ export function renderBuilderPage(
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Calendar filter</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
     <link rel="stylesheet" href="/builder.css">
     <script type="module" src="/builder.js"></script>
   </head>
@@ -40,7 +44,7 @@ export function renderBuilderPage(
         Build a filtered calendar URL.
         <a href="${docs}">Documentation</a>
       </p>
-      ${builderForm(state)}
+      ${builderForm(state, preview?.calendarName)}
       <hr>
       ${resultForm(result)}
       ${preview === undefined ? "" : renderPreview(preview)}
@@ -50,60 +54,43 @@ export function renderBuilderPage(
 `;
 }
 
-/** Renders the editable filter form for one builder state. */
-function builderForm(state: BuilderState): string {
+/** Renders source settings and native ordered-rule controls. */
+function builderForm(state: BuilderState, sourceCalendarName?: string): string {
   return `<form method="get" action="/build" data-builder>
         <button
           class="implicit-submit"
           tabindex="-1"
           aria-hidden="true"
+          data-manual-update
         >Update preview</button>
         ${diagnostics(state)}
-        <label>
-          Calendar URL
-          <input
-            name="input"
-            type="url"
-            value="${escape(state.input)}"
-            data-editable
-          >
-        </label>
-        <label>
-          Calendar name (optional)
-          <input
-            name="calendar-name"
-            data-editable
-            value="${escape(state.calendarName ?? "")}"
-          >
-        </label>
-        <input
-          type="hidden"
-          name="rule-count"
-          value="${state.rules.length}"
-        >
-        <fieldset>
-          <legend>Filters</legend>
-          <p>
-            <small>
-              Rules match event summaries, descriptions, and locations.
-              See the <a href="${guide}">filter guide</a> and
-              <a href="https://github.com/google/re2/wiki/Syntax">RE2 syntax</a>.
-            </small>
-          </p>
-          ${state.rules.map(renderRule).join("\n")}
-          <div class="actions">
-            <button name="operation" value="add-text">
-              Add include text filter
-            </button>
-            <button name="operation" value="add-exclude-text">
-              Add exclude text filter
-            </button>
-            <button name="operation" value="add-all">
-              Add catch-all include
-            </button>
-          </div>
-        </fieldset>
-        <button>Update preview</button>
+        <div class="builder-settings">
+          <label>
+            Source calendar URL (input)
+            <input
+              name="input"
+              type="url"
+              value="${escapeHtml(state.input)}"
+              placeholder="https://example.com/calendar.ics"
+              data-editable
+            >
+            <small>The calendar to load before these rules run.</small>
+          </label>
+          <label>
+            Override calendar name (optional)
+            <input
+              name="calendar-name"
+              data-editable
+              value="${escapeHtml(state.calendarName ?? "")}"${
+    sourceCalendarName === undefined ? "" : `
+              placeholder="${escapeHtml(sourceCalendarName)}"`
+  }
+            >
+            <small>Changes the name subscribers see. Leave blank to keep the source name.</small>
+          </label>
+        </div>
+        ${renderRules(state.rules)}
+        <button data-manual-update>Update preview</button>
       </form>`;
 }
 
@@ -111,13 +98,14 @@ function builderForm(state: BuilderState): string {
 function resultForm(result: string): string {
   return `<form method="get" action="/build-url" data-result-url>
         <label>
-          Result URL
+          Filtered calendar subscription URL
           <input
             name="url"
             type="url"
-            value="${escape(result)}"
+            value="${escapeHtml(result)}"
             data-editable
           >
+          <small>Copy this URL into your calendar app, or paste another filtered URL here to edit it.</small>
         </label>
         <button>Load URL</button>
       </form>`;
@@ -131,134 +119,30 @@ function diagnostics(state: BuilderState): string {
   return `<ul class="error">
           ${
     state.diagnostics.map((diagnostic) =>
-      `          <li>${escape(diagnostic.message)}</li>`
+      `          <li>${escapeHtml(diagnostic.message)}</li>`
     ).join("\n")
   }
         </ul>`;
 }
 
-/** Renders one catch-all or pattern rule and its controls. */
-function renderRule(rule: BuilderRule, index: number): string {
-  const prefix = `rule-${index}-`;
-  if (rule.kind === "all") {
-    return `<section class="rule">
-            <input type="hidden" name="${prefix}kind" value="all">
-            <p>Catch-all include</p>
-            ${actions(index)}
-          </section>`;
-  }
-  const regex = rule.mode === "regex";
-  const invalid = regex && !canCompile(rule.pattern, rule.flags);
-  const flags = (flag: string) => rule.flags.includes(flag) ? " checked" : "";
-  const disabled = regex && !rule.canConvertToText ? " disabled" : "";
-  const extraFlags = regex
-    ? ["m", "s", "u"].map((flag) => flagCheck(prefix, flag, flags(flag))).join(
-      "",
-    )
-    : "";
-  return `<section class="rule" data-rule="${index}">
-            <input
-              type="hidden"
-              name="${prefix}original-mode"
-              value="${rule.mode}"
-            >
-            <label>
-              Action
-              <select name="${prefix}action">
-                <option value="include"${
-    rule.action === "include" ? " selected" : ""
-  }>Include</option>
-                <option value="exclude"${
-    rule.action === "exclude" ? " selected" : ""
-  }>Exclude</option>
-              </select>
-            </label>
-            <label>
-              Pattern
-              <input
-                name="${prefix}pattern"
-                data-editable${regex ? " data-regex" : ""}
-                value="${escape(rule.pattern)}"${
-    invalid ? ' aria-invalid="true"' : ""
-  }
-              >
-              <small class="error" data-regex-error${
-    invalid ? "" : " hidden"
-  }>Invalid RE2 expression</small>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                role="switch"
-                name="${prefix}mode"
-                value="regex"${regex ? " checked" : ""}${disabled}
-              >
-              Regular expression
-            </label>
-            <fieldset>
-              <legend>Flags</legend>
-              ${flagCheck(prefix, "i", flags("i"))}
-              ${extraFlags}
-            </fieldset>
-            ${actions(index)}
-          </section>`;
-}
-
-/** Renders one regex flag checkbox. */
-function flagCheck(prefix: string, flag: string, checked: string): string {
-  return `<label>
-                <input
-                  type="checkbox"
-                  name="${prefix}flag-${flag}"${checked}
-                >
-                ${flag}
-              </label>`;
-}
-
-/** Renders movement and removal controls for one rule. */
-function actions(index: number): string {
-  return `<div class="actions">
-              <button name="operation" value="up-${index}">Move up</button>
-              <button name="operation" value="down-${index}">Move down</button>
-              <button name="operation" value="remove-${index}">Remove</button>
-            </div>`;
-}
-
 /** Renders event counts and safe preview fields. */
-function renderPreview(preview: {
-  kept: number;
-  total: number;
-  events: PreviewEvent[];
-  error?: string;
-}): string {
+function renderPreview(preview: BuilderPreview): string {
   if (preview.error !== undefined) {
-    return `<section>
+    return `<section class="preview">
         <h2>Preview</h2>
-        <p class="error">${escape(preview.error)}</p>
+        <p class="error">${escapeHtml(preview.error)}</p>
       </section>`;
   }
   const cards = preview.events.map((event) =>
     `<article class="event">
-          <strong>${escape(event.summary)}</strong><br>
-          ${escape(event.start)}<br>
-          ${escape(event.location)}
+          <strong>${escapeHtml(event.summary)}</strong><br>
+          ${escapeHtml(event.start)}<br>
+          ${escapeHtml(event.location)}
         </article>`
   ).join("\n");
-  return `<section>
+  return `<section class="preview">
         <h2>Preview</h2>
         <p>${preview.kept} of ${preview.total} events kept</p>
         ${cards}
       </section>`;
-}
-
-/** Escapes all text interpolated into HTML text and quoted attributes. */
-function escape(value: string): string {
-  return value.replace(/[&<>"']/g, (character) =>
-    ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    })[character] ?? character);
 }
