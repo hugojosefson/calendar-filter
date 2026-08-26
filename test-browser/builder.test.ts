@@ -28,16 +28,31 @@ async function withPage(
   const instance = await browser();
   try {
     const page = await instance.newPage({ javaScriptEnabled });
-    const consoleErrors: string[] = [];
+    const browserFailures: string[] = [];
     page.on("console", (message) => {
-      if (message.type() === "error") {
-        consoleErrors.push(message.text());
+      if (message.type() === "error" || message.type() === "warning") {
+        browserFailures.push(`console ${message.type()}: ${message.text()}`);
       }
     });
-    page.on("pageerror", (error) => consoleErrors.push(error.message));
+    page.on(
+      "pageerror",
+      (error) => browserFailures.push(`pageerror: ${error.message}`),
+    );
+    page.on(
+      "requestfailed",
+      (request) =>
+        browserFailures.push(
+          `requestfailed: ${request.url()} ${request.failure()?.errorText}`,
+        ),
+    );
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        browserFailures.push(`HTTP ${response.status()}: ${response.url()}`);
+      }
+    });
     await run(page, origin);
     await page.waitForTimeout(50);
-    assertEquals(consoleErrors, []);
+    assertEquals(browserFailures, []);
   } finally {
     await instance.close();
     await server.shutdown();
@@ -138,14 +153,29 @@ Deno.test("enhancement preserves URL state and editor semantics", async () => {
     );
     await page.getByRole("switch").click();
     await page.locator(".cm-editor").waitFor();
+    assert(
+      (await page.locator("[data-regex-explanation]").innerText()).startsWith(
+        "Matches ",
+      ),
+    );
 
     const editor = page.locator(".cm-content");
     assertEquals(await editor.innerText(), "Keep");
+    await editor.fill("");
+    assertEquals(
+      await page.locator("[data-regex-explanation]").innerText(),
+      "Matches everything.",
+    );
     await editor.fill("plain");
     await page.waitForFunction(() =>
       new URL(location.href).searchParams.get("include-regex") === "(plain)"
     );
     assertEquals(await page.locator(".cm-editor").count(), 1);
+    assert(
+      (await page.locator("[data-regex-explanation]").innerText()).startsWith(
+        "Matches ",
+      ),
+    );
 
     await page.getByLabel("Override calendar name (optional)").fill("Renamed");
     await page.waitForFunction(() =>
@@ -177,10 +207,19 @@ Deno.test("enhancement preserves URL state and editor semantics", async () => {
     await editor.fill("[");
     assertEquals(await page.locator(".cm-invalid").count(), 1);
     assertEquals(
+      await page.locator("[data-regex-explanation]").innerText(),
+      "Cannot explain an invalid RE2 expression.",
+    );
+    assertEquals(
       await page.locator("[data-regex-error]").evaluate((node) =>
         (node as HTMLElement).hidden
       ),
       false,
+    );
+    await page.waitForTimeout(350);
+    assertEquals(
+      new URL(page.url()).searchParams.get("include-regex"),
+      "^(Keep|Drop)+$",
     );
     await editor.press("Enter");
     await page.waitForFunction(() =>
@@ -203,6 +242,80 @@ Deno.test("enhancement preserves URL state and editor semantics", async () => {
       new URL(page.url()).searchParams.get("include-regex"),
       "^(Keep|Drop)+$",
     );
+  });
+});
+
+Deno.test("enhanced updates survive back navigation and show retry controls", async () => {
+  await withPage(true, async (page, origin) => {
+    await page.goto(origin);
+    const source = "https://calendar.example/feed";
+    await page.getByLabel("Source calendar URL (input)").fill(source);
+    await page.waitForFunction(() =>
+      new URL(location.href).searchParams.has("input")
+    );
+    await page.getByRole("button", { name: "Add include text filter" }).click();
+    await page.waitForFunction(() =>
+      new URL(location.href).searchParams.has("include-regex")
+    );
+
+    await page.route("**/build?**", async (route) => {
+      if (route.request().url().includes("include-regex=Keep")) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      await route.continue();
+    });
+    await page.getByLabel(/All events that include/).fill("Keep");
+    await page.waitForTimeout(350);
+    await page.evaluate(() => history.back());
+    await page.waitForFunction(() =>
+      !new URL(location.href).searchParams.has("include-regex")
+    );
+    await page.waitForTimeout(500);
+    assertEquals(new URL(page.url()).searchParams.has("include-regex"), false);
+    await page.unroute("**/build?**");
+
+    await page.goto(`${origin}/?input=${encodeURIComponent(source)}`);
+    await page.route("**/*", async (route) => {
+      if (route.request().url().includes("calendar-name=Retry")) {
+        await route.fulfill({
+          body: "not HTML",
+          contentType: "text/plain",
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.getByLabel("Override calendar name (optional)").fill("Retry");
+    await page.getByRole("alert").waitFor();
+    assertEquals(await page.getByText("Update preview").count() > 0, true);
+    await page.unroute("**/*");
+    await page.getByRole("button", { name: "Update preview" }).last().click();
+    await page.waitForFunction(() =>
+      new URL(location.href).searchParams.get("calendar-name") === "Retry"
+    );
+    assertEquals(await page.getByRole("alert").count(), 0);
+  });
+});
+
+Deno.test("builder has no horizontal overflow at 320 pixels", async () => {
+  await withPage(true, async (page, origin) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto(
+      `${origin}/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex=%28Keep%29&include=&exclude-regex=%28Drop%29`,
+    );
+    assertEquals(
+      await page.evaluate(() =>
+        document.documentElement.scrollWidth <= innerWidth
+      ),
+      true,
+    );
+    assertEquals(
+      await page.locator(".rule-heading .actions").evaluateAll((actions) =>
+        actions.every((action) => action.getBoundingClientRect().height < 40)
+      ),
+      true,
+    );
+    assertEquals(await page.locator("[data-regex-explanation]").count(), 2);
   });
 });
 

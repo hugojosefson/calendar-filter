@@ -10,6 +10,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { RE2JS } from "re2js";
+import { explainRegex } from "../regex-explanation.ts";
 
 /** Navigation callbacks owned by the builder's page controller. */
 export type RegexEditorCallbacks = {
@@ -23,9 +24,9 @@ export function installRegexEditor(
   callbacks: RegexEditorCallbacks,
 ): EditorView {
   input.hidden = true;
-  const setValidity = (okay: boolean): void => {
+  const setValidity = (okay: boolean, source: string): void => {
     input.setAttribute("aria-invalid", String(!okay));
-    view.dom.setAttribute("aria-invalid", String(!okay));
+    view.contentDOM.setAttribute("aria-invalid", String(!okay));
     view.dom.classList.toggle("cm-invalid", !okay);
     const error = input.parentElement?.querySelector<HTMLElement>(
       "[data-regex-error]",
@@ -33,11 +34,19 @@ export function installRegexEditor(
     if (error) {
       error.hidden = okay;
     }
+    const explanation = input.parentElement?.querySelector<HTMLElement>(
+      "[data-regex-explanation]",
+    );
+    if (explanation) {
+      explanation.textContent = okay
+        ? explainRegex(source)
+        : "Cannot explain an invalid RE2 expression.";
+    }
   };
   const update = (value: string): void => {
     input.value = value;
     input.setSelectionRange(value.length, value.length);
-    setValidity(valid(value, selectedFlags(input)));
+    setValidity(valid(value, selectedFlags(input)), value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
   const view = new EditorView({
@@ -45,7 +54,10 @@ export function installRegexEditor(
       doc: input.value,
       extensions: [
         regexHighlight,
-        EditorView.contentAttributes.of({ "aria-label": "RE2 pattern" }),
+        EditorView.contentAttributes.of({
+          "aria-describedby": input.getAttribute("aria-describedby") ?? "",
+          "aria-label": "RE2 pattern",
+        }),
         EditorView.domEventHandlers({ blur: callbacks.onBlur }),
         keymap.of([{
           key: "Enter",
@@ -64,7 +76,7 @@ export function installRegexEditor(
     parent: input.parentElement!,
   });
   view.dom.classList.add("cm-re2");
-  setValidity(valid(input.value, selectedFlags(input)));
+  setValidity(valid(input.value, selectedFlags(input)), input.value);
   return view;
 }
 

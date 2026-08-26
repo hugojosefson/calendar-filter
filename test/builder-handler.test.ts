@@ -102,6 +102,39 @@ Deno.test("builder shows generated regex wrappers only in stored state", async (
   assertMatch(body, /data-regex[^>]+value="plain"/);
 });
 
+Deno.test("builder explains blank and invalid regexes", async () => {
+  const blank = await (await handler()(
+    new Request(
+      "https://filter.example/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex-m=",
+    ),
+  )).text();
+  assertMatch(
+    blank,
+    /id="rule-0-regex-explanation" data-regex-explanation aria-live="polite">Matches everything\.<\/small>/,
+  );
+
+  const invalid = await (await handler()(
+    new Request(
+      "https://filter.example/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex=%5B",
+    ),
+  )).text();
+  assertMatch(
+    invalid,
+    /id="rule-0-regex-explanation" data-regex-explanation aria-live="polite">Cannot explain an invalid RE2 expression\.<\/small>/,
+  );
+  assertMatch(
+    invalid,
+    /aria-describedby="rule-0-regex-error rule-0-regex-explanation"/,
+  );
+
+  const text = await (await handler()(
+    new Request(
+      "https://filter.example/?input=https%3A%2F%2Fcalendar.example%2Ffeed&include-regex=plain",
+    ),
+  )).text();
+  assert(!text.includes("data-regex-explanation"));
+});
+
 Deno.test("builder makes a neutral update the first submit control", async () => {
   const body = await (await handler()(
     new Request(

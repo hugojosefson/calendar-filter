@@ -21,8 +21,9 @@ type FocusState = {
   caret: number;
 };
 
-let controller: AbortController | undefined;
 let timer: number | undefined;
+let scheduledNavigation = 0;
+let navigation = 0;
 let replacing = false;
 let previewUpdatesVerified = false;
 let resultUrlUpdatesVerified = false;
@@ -77,7 +78,11 @@ async function navigate(
   kind: NavigationKind,
   options: NavigationOptions = {},
 ): Promise<void> {
-  globalThis.clearTimeout(timer);
+  if (!currentForm(form)) {
+    return;
+  }
+  cancelPendingNavigation();
+  const currentNavigation = ++navigation;
   const data = new FormData(form);
   if (submitter instanceof HTMLButtonElement && submitter.name) {
     data.set(submitter.name, submitter.value);
@@ -93,26 +98,18 @@ async function navigate(
     ),
   ).toString();
 
-  controller?.abort();
-  const navigationController = new AbortController();
-  controller = navigationController;
   const focus = activeFocus();
   try {
     const response = await fetch(url, {
-      signal: navigationController.signal,
       redirect: "follow",
     });
-    const parsed = new DOMParser().parseFromString(
-      await response.text(),
-      "text/html",
-    );
-    if (navigationController.signal.aborted) {
+    const next = await responseMain(response);
+    if (currentNavigation !== navigation) {
       return;
     }
-    const next = parsed.querySelector("main");
     const current = document.querySelector("main");
     if (!next || !current) {
-      return;
+      throw new Error("The response did not contain a builder page.");
     }
     history[kind === "push" ? "pushState" : "replaceState"](
       {},
@@ -133,9 +130,9 @@ async function navigate(
     } finally {
       replacing = false;
     }
-  } catch (error) {
-    if ((error as DOMException).name !== "AbortError") {
-      console.error(error);
+  } catch {
+    if (currentNavigation === navigation && currentForm(form)) {
+      showNavigationError(form);
     }
   }
 }
@@ -147,11 +144,81 @@ function scheduleNavigation(
   delay: number,
   options: NavigationOptions = {},
 ): void {
-  globalThis.clearTimeout(timer);
+  cancelPendingNavigation();
+  const scheduled = ++scheduledNavigation;
   timer = globalThis.setTimeout(
-    () => navigate(form, null, kind, options),
+    () => {
+      if (scheduled !== scheduledNavigation || !currentForm(form)) {
+        return;
+      }
+      navigate(form, null, kind, options);
+    },
     delay,
   );
+}
+
+/** Cancels delayed work before navigation or history replaces the page. */
+function cancelPendingNavigation(): void {
+  globalThis.clearTimeout(timer);
+  timer = undefined;
+  scheduledNavigation++;
+}
+
+/** Accepts only forms belonging to the currently rendered page. */
+function currentForm(form: HTMLFormElement): boolean {
+  return form.isConnected &&
+    form.closest("main") === document.querySelector("main");
+}
+
+/** Parses only successful HTML builder responses. */
+async function responseMain(response: Response): Promise<HTMLElement> {
+  if (
+    !response.ok || !response.headers.get("content-type")?.includes("text/html")
+  ) {
+    throw new Error("The update did not return an HTML page.");
+  }
+  const main = new DOMParser().parseFromString(
+    await response.text(),
+    "text/html",
+  ).querySelector<HTMLElement>("main");
+  if (!main) {
+    throw new Error("The response did not contain a builder page.");
+  }
+  return main;
+}
+
+/** Shows a local retry message and restores native submit controls. */
+function showNavigationError(container: Element): void {
+  const error =
+    container.querySelector<HTMLElement>("[data-navigation-error]") ??
+      document.createElement("p");
+  error.dataset.navigationError = "";
+  error.className = "error";
+  error.setAttribute("role", "alert");
+  error.textContent =
+    "Could not update this page. Use the manual button to retry.";
+  if (!error.isConnected) {
+    container.append(error);
+  }
+  for (
+    const form of container.matches("form")
+      ? [container]
+      : container.querySelectorAll("form")
+  ) {
+    const resultUrl = form.matches("[data-result-url]");
+    const selector = resultUrl
+      ? "button[data-manual-result-url]"
+      : "button[data-manual-update]:not(.implicit-submit)";
+    if (form.querySelector(selector)) {
+      continue;
+    }
+    const button = document.createElement("button");
+    button.type = "submit";
+    button.textContent = resultUrl ? "Load URL" : "Update preview";
+    button.toggleAttribute("data-manual-result-url", resultUrl);
+    button.toggleAttribute("data-manual-update", !resultUrl);
+    form.append(button);
+  }
 }
 
 /** Handles normal submissions; ordinary Enter remains a neutral update. */
@@ -170,7 +237,7 @@ function submit(event: SubmitEvent): void {
 /** Schedules text changes as replace navigation, including paste and IME input. */
 function input(event: Event): void {
   const target = event.target as HTMLInputElement;
-  if (!target.matches("input[data-editable]") || !target.validity.valid) {
+  if (!target.matches("input[data-editable]") || !editableValid(target)) {
     return;
   }
   dirtyInputs.add(target);
@@ -178,6 +245,11 @@ function input(event: Event): void {
     preserveRegexNames: target.matches("[data-regex]") ? [target.name] : [],
     verifies: verificationFor(target.form!),
   });
+}
+
+/** Keeps RE2 syntax errors local until the user explicitly submits them. */
+function editableValid(input: HTMLInputElement): boolean {
+  return input.validity.valid && input.getAttribute("aria-invalid") !== "true";
 }
 
 /** Keeps an automatically edited literal in regex mode across its URL reload. */
@@ -228,7 +300,7 @@ function keydown(event: KeyboardEvent): void {
   const target = event.target as HTMLInputElement;
   if (
     event.key === "Enter" && target.matches("input[data-editable]") &&
-    target.validity.valid
+    editableValid(target)
   ) {
     event.preventDefault();
     navigate(target.form!, null, "push");
@@ -241,7 +313,7 @@ function blur(event: FocusEvent): void {
   if (
     !replacing && dirtyInputs.has(target) &&
     target.matches("input[data-editable]") &&
-    target.validity.valid
+    editableValid(target)
   ) {
     scheduleNavigation(target.form!, "replace", 0, {
       verifies: verificationFor(target.form!),
@@ -295,7 +367,7 @@ function restoreFocus(focus: FocusState | undefined): void {
 function enhanceRegexEditor(input: HTMLInputElement): void {
   const view = installRegexEditor(input, {
     onBlur: () => {
-      if (!replacing && dirtyInputs.has(input)) {
+      if (!replacing && dirtyInputs.has(input) && editableValid(input)) {
         scheduleNavigation(input.form!, "replace", 0, {
           preserveRegexNames: [input.name],
           verifies: "preview",
@@ -309,24 +381,17 @@ function enhanceRegexEditor(input: HTMLInputElement): void {
 
 /** Reloads server-rendered state when the user traverses browser history. */
 globalThis.addEventListener("popstate", async () => {
-  controller?.abort();
-  const navigationController = new AbortController();
-  controller = navigationController;
+  cancelPendingNavigation();
+  const currentNavigation = ++navigation;
   try {
-    const response = await fetch(location.href, {
-      signal: navigationController.signal,
-    });
-    const parsed = new DOMParser().parseFromString(
-      await response.text(),
-      "text/html",
-    );
-    if (navigationController.signal.aborted) {
+    const response = await fetch(location.href);
+    const next = await responseMain(response);
+    if (currentNavigation !== navigation) {
       return;
     }
-    const next = parsed.querySelector("main");
     const current = document.querySelector("main");
     if (!next || !current) {
-      return;
+      throw new Error("The response did not contain a builder page.");
     }
     replacing = true;
     try {
@@ -335,9 +400,12 @@ globalThis.addEventListener("popstate", async () => {
     } finally {
       replacing = false;
     }
-  } catch (error) {
-    if ((error as DOMException).name !== "AbortError") {
-      console.error(error);
+  } catch {
+    if (currentNavigation === navigation) {
+      const main = document.querySelector("main");
+      if (main) {
+        showNavigationError(main);
+      }
     }
   }
 });

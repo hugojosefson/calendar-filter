@@ -2,6 +2,7 @@
 
 import { RE2JS } from "re2js";
 import { escapeHtml } from "./html.ts";
+import { explainRegex } from "./regex-explanation.ts";
 import { canCompile, singletonText } from "./text.ts";
 import type { BuilderRule } from "./types.ts";
 
@@ -98,6 +99,8 @@ function patternRule(
   unreachable: string,
 ): string {
   const prefix = `rule-${index}-`;
+  const errorId = `${prefix}regex-error`;
+  const explanationId = `${prefix}regex-explanation`;
   const regex = rule.mode === "regex";
   const invalid = regex && !canCompile(rule.pattern, rule.flags);
   const flags = (flag: string) => rule.flags.includes(flag) ? " checked" : "";
@@ -117,6 +120,22 @@ function patternRule(
     ? "All events that match"
     : "All events that include";
   const placeholder = regex ? "this RE2 regex pattern" : "this exact string";
+  const regexDescription = regex
+    ? `
+                   aria-describedby="${errorId} ${explanationId}"`
+    : "";
+  const regexFeedback = regex
+    ? `<small id="${errorId}" class="error" data-regex-error role="alert"${
+      invalid ? "" : " hidden"
+    }>Invalid RE2 expression</small>
+                 <small id="${explanationId}" data-regex-explanation aria-live="polite">${
+      escapeHtml(
+        invalid
+          ? "Cannot explain an invalid RE2 expression."
+          : explainRegex(displayedPattern),
+      )
+    }</small>`
+    : "";
   return `<section
             class="rule"
             data-rule="${index}"
@@ -136,17 +155,15 @@ function patternRule(
               <label class="rule-pattern">
                 ${patternLabel}
                 <input
-                  name="${prefix}pattern"
-                  data-editable${regex ? " data-regex" : ""}${storedPattern}
-                  value="${escapeHtml(displayedPattern)}"
-                  placeholder="${placeholder}"${
+                   name="${prefix}pattern"
+                   data-editable${regex ? " data-regex" : ""}${storedPattern}
+                   value="${escapeHtml(displayedPattern)}"
+                   placeholder="${placeholder}"${regexDescription}${
     invalid ? ' aria-invalid="true"' : ""
   }
-                >
-                <small class="error" data-regex-error${
-    invalid ? "" : " hidden"
-  }>Invalid RE2 expression</small>
-              </label>
+                 >
+                 ${regexFeedback}
+               </label>
               <label class="rule-action">
                 should be
                 <select name="${prefix}action">

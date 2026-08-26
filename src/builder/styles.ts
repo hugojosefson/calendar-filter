@@ -150,6 +150,12 @@ button {
   min-width: 0;
 }
 
+.rule-pattern small:not([hidden]) {
+  display: block;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
 .rule-mode,
 .rule-flags {
   margin: 0;
@@ -206,6 +212,15 @@ button {
 
 .error {
   color: var(--pico-del-color);
+}
+
+[data-navigation-error] {
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+
+[data-result-url] [data-navigation-error] {
+  grid-column: 1 / -1;
 }
 
 .implicit-submit {
@@ -267,6 +282,32 @@ button {
   .rule-fields,
   [data-result-url] {
     grid-template-columns: 1fr;
+  }
+
+  main.container {
+    padding-right: 0.5rem;
+    padding-left: 0.5rem;
+  }
+
+  .rule-heading {
+    flex-wrap: wrap;
+  }
+
+  .rule-heading .actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .rule-fields > *,
+  input,
+  select,
+  .cm-re2 {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .rule-flags label {
+    white-space: normal;
   }
 }
 `;

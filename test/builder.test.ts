@@ -16,6 +16,7 @@ import {
   parseResultUrl,
 } from "../src/builder/codec.ts";
 import { previewEvents } from "../src/builder/preview-events.ts";
+import { explainRegex } from "../src/builder/regex-explanation.ts";
 
 const decode = (query: string) =>
   decodeBuilderQuery(new URLSearchParams(query));
@@ -155,6 +156,13 @@ Deno.test("RE2JS exact zero and optional empty patterns are singleton", () => {
       canConvertToText: false,
     }, source);
   }
+});
+
+Deno.test("builder explains blank and ordinary regexes", () => {
+  assertEquals(explainRegex(""), "Matches everything.");
+  const explanation = explainRegex("\\bP15\\b");
+  assert(explanation.startsWith("Matches "));
+  assert(explanation.includes("P"));
 });
 
 Deno.test("builder encodes and parses /webcal result URLs", () => {

@@ -12,7 +12,8 @@ edits update after a short delay without adding history entries, while rule
 additions, removals, reordering, mode changes, and submitted updates add history
 entries. Back and forward reload server-rendered state. Once an automatic update
 succeeds, the builder removes the corresponding manual Update preview or Load
-URL button.
+URL button. A failed automatic update keeps the current page and restores a
+manual retry button.
 
 Numbered rule cards show evaluation order. Drag a card by its handle, or use its
 arrow buttons, to reorder it. A catch-all should normally be last because rules
@@ -22,11 +23,14 @@ catch-all.
 
 Text mode quotes its value as a literal RE2 expression and exposes only the `i`
 flag. Regex mode supports `i`, `m`, `s`, and `u`, validates with RE2
-immediately, and uses a syntax-highlighted CodeMirror editor. A regex can switch
-to text mode only when it recognizes exactly one literal string. The editor
-hides the redundant capture group used to preserve regex mode during automatic
-pattern updates. Editing another field or submitting the form allows canonical
-literal patterns to return to text mode.
+immediately, uses a syntax-highlighted CodeMirror editor, and shows a
+plain-English description beneath the field. A blank regex is described as
+matching everything. A syntax error stays in the editor without requesting a
+preview until it is submitted explicitly. A regex can switch to text mode only
+when it recognizes exactly one literal string. The editor hides the redundant
+capture group used to preserve regex mode during automatic pattern updates.
+Editing another field or submitting the form allows canonical literal patterns
+to return to text mode.
 
 ## Rule pipeline
 
