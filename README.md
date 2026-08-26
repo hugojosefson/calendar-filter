@@ -398,18 +398,26 @@ must be finite safe integers. Timeouts and byte, URL, rule, regex, and name
 limits must be positive. Redirect count, cache TTL, and cache bytes may be zero.
 An invalid option throws `TypeError`.
 
-To deploy on Deno Deploy, the whole app is:
+## CLI
 
-```ts
-// deno-deploy.ts
-import { calendarFilterHandler } from "@hugojosefson/calendar-filter";
-
-export const default = calendarFilterHandler;
-```
+Run the packaged server with only network permission:
 
 ```sh
-deno deploy --project calendar-filter deno-deploy.ts
+deno run --allow-net jsr:@hugojosefson/calendar-filter/cli
 ```
+
+It listens on `http://0.0.0.0:9000/webcal`. `deno task serve` does the same in a
+checkout. Use `--host` and `--port` to change the endpoint. The numeric handler
+limits use their option names in kebab case, such as `--max-filter-rules=32`.
+Run `--help` for the full list.
+
+`--allow-private-upstreams` permits localhost and other non-public upstream
+addresses. Use it only in a trusted local deployment. On a public server, it can
+turn the service into a route to private network resources.
+
+For Deno Deploy, use `jsr:@hugojosefson/calendar-filter/serve` as the
+entrypoint. It invokes `serveCalendarFilter()` with safe defaults. The CLI and
+Deploy entrypoint share the same startup code.
 
 ## Installation
 

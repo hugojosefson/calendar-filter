@@ -4,12 +4,15 @@
   "license": "MIT",
   "exports": {
     ".": "./mod.ts",
-    "./example-usage": "./readme/example-usage.ts"
+    "./example-usage": "./readme/example-usage.ts",
+    "./cli": "./src/cli.ts",
+    "./serve": "./src/serve.ts"
   },
   "tasks": {
     "default": "       deno fmt && deno lint --fix && (deno check & deno task test) && deno task readme",
     "all": "           deno task default && deno publish --dry-run",
     "test": "          deno test --parallel --trace-leaks --coverage",
+    "serve": "         deno run --allow-net src/cli.ts",
     "dev": "           deno test --parallel --trace-leaks --watch",
     "coverage": "      deno coverage",
     "readme": "        touch README.md && chmod +w README.md && ./readme/generate-readme.ts readme/README.md > README.md && deno fmt README.md; chmod -w README.md",
