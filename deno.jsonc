@@ -43,6 +43,9 @@
   "deploy": {
     "org": "se",
     "app": "calendar-filter",
-    "entrypoint": "src/server/serve.ts"
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "src/server/serve.ts"
+    }
   }
 }

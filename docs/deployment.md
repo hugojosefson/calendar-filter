@@ -99,15 +99,16 @@ public server it can route requests to private network resources.
 
 ## Deno Deploy
 
-The repository configures `src/server/serve.ts` as its dynamic runtime
-entrypoint. It calls `serveCalendarFilter()` with safe defaults. Create an app
-on the current Deno Deploy infrastructure with:
+The `deploy.runtime` object configures `src/server/serve.ts` as its dynamic
+runtime entrypoint. It calls `serveCalendarFilter()` with safe defaults. Create
+an app on the current Deno Deploy infrastructure with:
 
 ```sh
 deno deploy create . \
   --org <organization> \
   --app <application> \
   --source local \
+  --do-not-use-detected-build-config \
   --runtime-mode dynamic \
   --entrypoint src/server/serve.ts \
   --region eu
