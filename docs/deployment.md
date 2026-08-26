@@ -99,6 +99,22 @@ public server it can route requests to private network resources.
 
 ## Deno Deploy
 
-Set the Deno Deploy entrypoint to `jsr:@hugojosefson/calendar-filter/serve`. It
-calls `serveCalendarFilter()` with safe defaults. The Deploy entrypoint and CLI
-use the same startup code.
+The repository configures `src/server/serve.ts` as its dynamic runtime
+entrypoint. It calls `serveCalendarFilter()` with safe defaults. Create an app
+on the current Deno Deploy infrastructure with:
+
+```sh
+deno deploy create . \
+  --org <organization> \
+  --app <application> \
+  --source local \
+  --runtime-mode dynamic \
+  --entrypoint src/server/serve.ts \
+  --region eu
+```
+
+Deploy later revisions to production with:
+
+```sh
+deno deploy . --org <organization> --app <application> --prod
+```
