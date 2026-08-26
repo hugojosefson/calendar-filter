@@ -36,6 +36,7 @@
     "@codemirror/view": "npm:@codemirror/view@6.39.16",
     "@playwright/test": "npm:@playwright/test@1.62.1",
     "@picocss/pico": "npm:@picocss/pico@2.1.1",
+    "@vikrant_kadam/regex-simplifier": "npm:@vikrant_kadam/regex-simplifier@1.0.4",
     "@std/assert": "jsr:@std/assert@^1.0.19",
     "@std/path": "jsr:@std/path@^1.1.6"
   }

@@ -1,6 +1,6 @@
 /** @module Plain-language summaries for regex patterns in the builder. */
 
-import { regexToEnglish } from "npm:@vikrant_kadam/regex-simplifier@1.0.4";
+import { regexToEnglish } from "@vikrant_kadam/regex-simplifier";
 
 /** Explains a valid RE2 pattern without exposing package failures to the UI. */
 export function explainRegex(pattern: string): string {
