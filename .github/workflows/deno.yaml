@@ -13,6 +13,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
       - run: deno task test
+      # Installer needs package-manager/download/cache permissions for Chromium.
+      - run: deno run --allow-all npm:playwright@1.62.1 install --with-deps chromium
+      - run: deno task test:browser
   check:
     runs-on: ubuntu-latest
     steps:

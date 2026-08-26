@@ -1,6 +1,7 @@
 /** @module Builder routes and secure page responses. */
 
 import { builderCss } from "./styles.ts";
+import { builderJs } from "./generated-assets.ts";
 import { applyBuilderOperation, builderStateFromForm } from "./form.ts";
 import {
   decodeBuilderQuery,
@@ -21,6 +22,9 @@ export function createBuilderRouteHandler(
     const pathname = new URL(request.url).pathname;
     if (pathname === "/builder.css") {
       return pageMethod(request, () => cssResponse(isHead));
+    }
+    if (pathname === "/builder.js") {
+      return pageMethod(request, () => javascriptResponse(isHead));
     }
     if (pathname === "/") {
       return await pageMethod(
@@ -160,12 +164,19 @@ function cssResponse(isHead: boolean): Response {
   });
 }
 
+/** Returns the committed local enhancement bundle. */
+function javascriptResponse(isHead: boolean): Response {
+  return new Response(isHead ? null : builderJs, {
+    headers: pageHeaders("text/javascript; charset=utf-8"),
+  });
+}
+
 /** Sets no-store and browser hardening headers for builder resources. */
 function pageHeaders(contentType: string): Headers {
   return new Headers({
     "Cache-Control": "no-store",
     "Content-Security-Policy":
-      "default-src 'none'; style-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "Content-Type": contentType,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",

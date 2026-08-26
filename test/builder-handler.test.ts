@@ -20,14 +20,43 @@ Deno.test("empty root is a secure builder page without an upstream request", asy
     return Promise.resolve(new Response(source));
   })(new Request("https://filter.example/"));
   assertEquals(response.status, 200);
-  assertMatch(await response.text(), /<form method=get action=\/build>/);
+  assertMatch(
+    await response.text(),
+    /<form method="get" action="\/build" data-builder>/,
+  );
   assertEquals(calls, 0);
   assertEquals(response.headers.get("Cache-Control"), "no-store");
   assertEquals(response.headers.get("X-Content-Type-Options"), "nosniff");
   assertEquals(
     response.headers.get("Content-Security-Policy"),
-    "default-src 'none'; style-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
   );
+});
+
+Deno.test("builder serves local stylesheet and enhancement assets", async () => {
+  const calendarHandler = handler();
+  const page = await calendarHandler(new Request("https://filter.example/"));
+  const body = await page.text();
+  assert(body.includes('href="/builder.css"'));
+  assert(body.includes('src="/builder.js"'));
+  assert(!body.includes("cdn.jsdelivr.net"));
+
+  const css = await calendarHandler(
+    new Request("https://filter.example/builder.css"),
+  );
+  assertEquals(css.status, 200);
+  assertEquals(css.headers.get("Content-Type"), "text/css; charset=utf-8");
+  assert((await css.text()).includes(":root"));
+
+  const javascript = await calendarHandler(
+    new Request("https://filter.example/builder.js"),
+  );
+  assertEquals(javascript.status, 200);
+  assertEquals(
+    javascript.headers.get("Content-Type"),
+    "text/javascript; charset=utf-8",
+  );
+  assert((await javascript.text()).length > 1_000);
 });
 
 Deno.test("root preview shares its upstream cache and escapes event text", async () => {
@@ -53,10 +82,11 @@ Deno.test("builder makes a neutral update the first submit control", async () =>
     ),
   )).text();
   assert(
-    body.indexOf("class=implicit-submit") < body.indexOf("value=up-"),
+    body.indexOf('class="implicit-submit"') < body.indexOf('value="up-'),
   );
   assert(
-    body.indexOf("class=implicit-submit") < body.indexOf("value=add-text"),
+    body.indexOf('class="implicit-submit"') <
+      body.indexOf('value="add-text"'),
   );
 });
 
@@ -118,7 +148,10 @@ Deno.test("build removes and reorders submitted rules", async () => {
 Deno.test("build-url accepts webcal and page methods are bodyless for HEAD", async () => {
   const calendarHandler = handler();
   const page = await calendarHandler(new Request("https://filter.example/"));
-  assertMatch(await page.text(), /name=url type=url value="webcal:/);
+  assertMatch(
+    await page.text(),
+    /name="url"\s+type="url"\s+value="webcal:/,
+  );
   const redirect = await calendarHandler(
     new Request(
       "https://filter.example/build-url?url=webcal%3A%2F%2Ffilter.example%2Fwebcal%3Finput%3Dhttps%253A%252F%252Fcalendar.example%252Ffeed%26include",
