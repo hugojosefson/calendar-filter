@@ -11,7 +11,8 @@ The forms remain usable when JavaScript is unavailable. With JavaScript, text
 edits update after a short delay without adding history entries, while rule
 additions, removals, reordering, mode changes, and submitted updates add history
 entries. Back and forward reload server-rendered state. Once an automatic update
-succeeds, the builder removes the now-redundant Update preview buttons.
+succeeds, the builder removes the corresponding manual Update preview or Load
+URL button.
 
 Numbered rule cards show evaluation order. Drag a card by its handle, or use its
 arrow buttons, to reorder it. A catch-all should normally be last because rules

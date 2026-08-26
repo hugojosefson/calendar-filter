@@ -11,7 +11,8 @@ type NavigationKind = "push" | "replace";
 /** Optional form-data changes for one automatic navigation. */
 type NavigationOptions = {
   operation?: string;
-  preserveRegexName?: string;
+  preserveRegexNames?: readonly string[];
+  verifies?: "preview" | "result-url";
 };
 
 /** Name and caret needed to restore one native or CodeMirror field. */
@@ -23,7 +24,8 @@ type FocusState = {
 let controller: AbortController | undefined;
 let timer: number | undefined;
 let replacing = false;
-let automaticUpdatesVerified = false;
+let previewUpdatesVerified = false;
+let resultUrlUpdatesVerified = false;
 const editors = new WeakMap<HTMLInputElement, EditorView>();
 const dirtyInputs = new WeakSet<HTMLInputElement>();
 
@@ -43,16 +45,28 @@ function enhance(): void {
   main?.addEventListener("keydown", keydown);
   main?.addEventListener("focusout", blur);
   if (main) {
+    for (
+      const handle of main.querySelectorAll<HTMLElement>(
+        "[data-drag-handle]",
+      )
+    ) {
+      handle.hidden = false;
+    }
     installRuleDragging(main, (form, source, destination) => {
       navigate(form, null, "push", {
         operation: `move-${source}-${destination}`,
+        preserveRegexNames: regexInputNames(form),
+        verifies: "preview",
       });
     });
   }
-  if (automaticUpdatesVerified) {
+  if (previewUpdatesVerified) {
     for (const button of main?.querySelectorAll("[data-manual-update]") ?? []) {
       button.remove();
     }
+  }
+  if (resultUrlUpdatesVerified) {
+    main?.querySelector("[data-manual-result-url]")?.remove();
   }
 }
 
@@ -71,7 +85,7 @@ async function navigate(
   if (options.operation !== undefined) {
     data.set("operation", options.operation);
   }
-  preserveRegexMode(data, options.preserveRegexName);
+  preserveRegexModes(data, options.preserveRegexNames ?? []);
   const url = new URL(form.action, location.href);
   url.search = new URLSearchParams(
     [...data].filter((entry): entry is [string, string] =>
@@ -105,7 +119,12 @@ async function navigate(
       "",
       response.url,
     );
-    automaticUpdatesVerified = true;
+    if (options.verifies === "preview") {
+      previewUpdatesVerified = true;
+    }
+    if (options.verifies === "result-url") {
+      resultUrlUpdatesVerified = true;
+    }
     replacing = true;
     try {
       current.replaceWith(next);
@@ -138,8 +157,14 @@ function scheduleNavigation(
 /** Handles normal submissions; ordinary Enter remains a neutral update. */
 function submit(event: SubmitEvent): void {
   const form = event.target as HTMLFormElement;
+  const submitter = event.submitter as HTMLElement | null;
   event.preventDefault();
-  navigate(form, event.submitter as HTMLElement | null, "push");
+  navigate(form, submitter, "push", {
+    verifies: form.matches("[data-builder]") &&
+        submitter?.matches("button[name=operation]")
+      ? "preview"
+      : undefined,
+  });
 }
 
 /** Schedules text changes as replace navigation, including paste and IME input. */
@@ -150,36 +175,51 @@ function input(event: Event): void {
   }
   dirtyInputs.add(target);
   scheduleNavigation(target.form!, "replace", 300, {
-    preserveRegexName: target.matches("[data-regex]") ? target.name : undefined,
+    preserveRegexNames: target.matches("[data-regex]") ? [target.name] : [],
+    verifies: verificationFor(target.form!),
   });
 }
 
 /** Keeps an automatically edited literal in regex mode across its URL reload. */
-function preserveRegexMode(
+function preserveRegexModes(
   data: FormData,
-  name: string | undefined,
+  names: readonly string[],
 ): void {
-  if (name === undefined) {
-    return;
+  for (const name of names) {
+    const source = data.get(name);
+    if (typeof source !== "string") {
+      continue;
+    }
+    const flagPrefix = name.replace(/pattern$/, "flag-");
+    const flags = "imsu".split("").filter((flag) =>
+      data.has(`${flagPrefix}${flag}`)
+    ).join("");
+    if (canonicalText(source, flags) !== undefined) {
+      data.set(name, `(${source})`);
+    }
   }
-  const source = data.get(name);
-  if (typeof source !== "string") {
-    return;
-  }
-  const flagPrefix = name.replace(/pattern$/, "flag-");
-  const flags = "imsu".split("").filter((flag) =>
-    data.has(`${flagPrefix}${flag}`)
-  ).join("");
-  if (canonicalText(source, flags) !== undefined) {
-    data.set(name, `(${source})`);
-  }
+}
+
+/** Returns all regex field names that one automatic reorder must preserve. */
+function regexInputNames(form: HTMLFormElement): string[] {
+  return [...form.querySelectorAll<HTMLInputElement>("input[data-regex]")].map(
+    (input) => input.name,
+  );
+}
+
+/** Identifies which native submit button one automatic text update replaces. */
+function verificationFor(
+  form: HTMLFormElement,
+): "preview" | "result-url" {
+  return form.matches("[data-result-url]") ? "result-url" : "preview";
 }
 
 /** Pushes structural controls immediately while editing remains replace-only. */
 function change(event: Event): void {
   const target = event.target as HTMLElement;
   if (target.matches("select, input[type=checkbox]")) {
-    navigate((target as HTMLInputElement).form!, null, "push");
+    const form = (target as HTMLInputElement).form!;
+    navigate(form, null, "push", { verifies: verificationFor(form) });
   }
 }
 
@@ -203,7 +243,9 @@ function blur(event: FocusEvent): void {
     target.matches("input[data-editable]") &&
     target.validity.valid
   ) {
-    scheduleNavigation(target.form!, "replace", 0);
+    scheduleNavigation(target.form!, "replace", 0, {
+      verifies: verificationFor(target.form!),
+    });
   }
 }
 
@@ -255,7 +297,8 @@ function enhanceRegexEditor(input: HTMLInputElement): void {
     onBlur: () => {
       if (!replacing && dirtyInputs.has(input)) {
         scheduleNavigation(input.form!, "replace", 0, {
-          preserveRegexName: input.name,
+          preserveRegexNames: [input.name],
+          verifies: "preview",
         });
       }
     },

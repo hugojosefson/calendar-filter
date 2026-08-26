@@ -107,7 +107,7 @@ function resultForm(result: string): string {
           >
           <small>Copy this URL into your calendar app, or paste another filtered URL here to edit it.</small>
         </label>
-        <button>Load URL</button>
+        <button data-manual-result-url>Load URL</button>
       </form>`;
 }
 

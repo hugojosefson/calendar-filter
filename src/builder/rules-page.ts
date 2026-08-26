@@ -194,6 +194,7 @@ function dragHandle(index: number): string {
                 class="drag-handle"
                 draggable="true"
                 data-drag-handle
+                hidden
                 aria-label="Drag rule ${index + 1} to reorder"
                 title="Drag to reorder"
               >≡</span>`;

@@ -17,7 +17,9 @@ forms, preview, and result URL work without JavaScript. `/builder.css` and
 enhancement. Enhanced text updates replace the current history entry after a
 short delay; structural actions and explicit submissions push entries. Rules are
 numbered and can be reordered by drag handle or arrow controls. Pattern rules
-added through the UI go immediately before the first catch-all.
+added through the UI go immediately before the first catch-all. After an
+automatic preview or result-URL update succeeds, its redundant manual submit
+button is removed.
 
 Builder pages and assets use `Cache-Control: no-store`, same-origin script and
 connection restrictions, `Referrer-Policy: no-referrer`, MIME sniffing and frame

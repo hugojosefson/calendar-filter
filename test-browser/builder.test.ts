@@ -47,6 +47,10 @@ async function withPage(
 Deno.test("native controls work without JavaScript", async () => {
   await withPage(false, async (page, origin) => {
     await page.goto(origin);
+    assertEquals(
+      await page.getByRole("button", { name: "Load URL" }).count(),
+      1,
+    );
     await page.getByLabel("Source calendar URL (input)").fill(
       "https://calendar.example/feed",
     );
@@ -62,6 +66,7 @@ Deno.test("native controls work without JavaScript", async () => {
     await page.getByRole("button", { name: /Move rule 2 up/ }).click();
     await page.getByRole("button", { name: /Remove rule 1/ }).click();
     assertEquals(await page.getByRole("switch").count(), 1);
+    assertEquals(await page.locator("[data-drag-handle]:visible").count(), 0);
   });
 });
 
@@ -205,7 +210,7 @@ Deno.test("drag handle reorders numbered rule slots", async () => {
   await withPage(true, async (page, origin) => {
     const input = encodeURIComponent("https://calendar.example/feed");
     await page.goto(
-      `${origin}/?input=${input}&include-regex=Keep&exclude-regex=Drop`,
+      `${origin}/?input=${input}&include-regex=%28Keep%29&exclude-regex=Drop`,
     );
     const handles = page.locator("[data-drag-handle]");
     assertEquals(await handles.count(), 2);
@@ -220,8 +225,31 @@ Deno.test("drag handle reorders numbered rule slots", async () => {
     );
     assertEquals(
       [...new URL(page.url()).searchParams.entries()].slice(1),
-      [["exclude-regex", "Drop"], ["include-regex", "Keep"]],
+      [["exclude-regex", "Drop"], ["include-regex", "(Keep)"]],
     );
+    assertEquals(await page.locator(".cm-editor").count(), 1);
+    assertEquals(await page.locator(".cm-content").innerText(), "Keep");
     assertEquals(await page.locator("[data-manual-update]").count(), 0);
+  });
+});
+
+Deno.test("automatic result URL loading removes its manual button", async () => {
+  await withPage(true, async (page, origin) => {
+    await page.goto(origin);
+    assertEquals(
+      await page.locator("[data-manual-result-url]").count(),
+      1,
+    );
+    const source = encodeURIComponent("https://calendar.example/feed");
+    await page.getByLabel("Filtered calendar subscription URL").fill(
+      `${origin}/webcal?input=${source}&include-regex=Keep`,
+    );
+    await page.waitForFunction(() =>
+      new URL(location.href).searchParams.get("include-regex") === "Keep"
+    );
+    assertEquals(
+      await page.locator("[data-manual-result-url]").count(),
+      0,
+    );
   });
 });
