@@ -1,8 +1,8 @@
 import { assertEquals, assertThrows } from "@std/assert";
 
-import { ApiError } from "../src/api-error.ts";
-import { resolveOptions } from "../src/options.ts";
-import { parseRequest } from "../src/request.ts";
+import { ApiError } from "../src/http/api-error.ts";
+import { resolveOptions } from "../src/server/options.ts";
+import { parseRequest } from "../src/http/request.ts";
 
 const request = (query: string): Request =>
   new Request(`https://filter.example/webcal?${query}`);

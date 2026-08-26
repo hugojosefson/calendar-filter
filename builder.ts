@@ -1,3 +1,5 @@
+/** @module Public URL builder API. */
+
 export {
   buildResultUrl,
   createBuilderState,
@@ -5,13 +7,13 @@ export {
   describePattern,
   encodeBuilderQuery,
   parseResultUrl,
-} from "./src/builder-codec.ts";
+} from "./src/builder/codec.ts";
 export {
   canCompile,
   canonicalText,
   isTextFlags,
   singletonText,
-} from "./src/builder-text.ts";
+} from "./src/builder/text.ts";
 export {
   addBuilderRule,
   moveBuilderRule,
@@ -20,7 +22,7 @@ export {
   setBuilderRuleFlags,
   setBuilderRuleMode,
   setBuilderRulePattern,
-} from "./src/builder-transform.ts";
+} from "./src/builder/transform.ts";
 export type {
   BuilderAction,
   BuilderDiagnostic,
@@ -28,4 +30,4 @@ export type {
   BuilderQuery,
   BuilderRule,
   BuilderState,
-} from "./src/builder-types.ts";
+} from "./src/builder/types.ts";

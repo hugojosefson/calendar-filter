@@ -1,8 +1,8 @@
 import { assertEquals } from "@std/assert";
 
-import { resolveOptions } from "../src/options.ts";
-import { createUpstreamLoader } from "../src/upstream-loader.ts";
-import { UpstreamError } from "../src/upstream-error.ts";
+import { resolveOptions } from "../src/server/options.ts";
+import { createUpstreamLoader } from "../src/upstream/loader.ts";
+import { UpstreamError } from "../src/upstream/error.ts";
 
 const decoder = new TextDecoder();
 const publicResolver = (): Promise<string[]> => Promise.resolve(["8.8.8.8"]);

@@ -4,7 +4,7 @@ import {
   type CalendarFilterOptions,
   createCalendarFilterHandler,
 } from "../mod.ts";
-import { resolveOptions } from "../src/options.ts";
+import { resolveOptions } from "../src/server/options.ts";
 
 Deno.test("options use documented defaults when omitted or undefined", () => {
   assertEquals(resolveOptions(undefined).maxFilterRules, 64);

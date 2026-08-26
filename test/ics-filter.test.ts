@@ -1,9 +1,9 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import fixture from "./fixtures/folded-calendar.ics" with { type: "text" };
 
-import { IcsError } from "../src/ics-error.ts";
-import { filterCalendar } from "../src/ics-filter.ts";
-import { compileRule } from "../src/rules.ts";
+import { IcsError } from "../src/calendar/error.ts";
+import { filterCalendar } from "../src/calendar/filter.ts";
+import { compileRule } from "../src/filter/rules.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { ignoreBOM: true });

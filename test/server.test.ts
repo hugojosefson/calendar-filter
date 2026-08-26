@@ -1,6 +1,6 @@
 import { assertEquals, assertStrictEquals } from "@std/assert";
 
-import { serveCalendarFilter } from "../src/server.ts";
+import { serveCalendarFilter } from "../src/server/server.ts";
 
 Deno.test("server passes distinct server and filter options to Deno.serve", () => {
   const originalServe = Deno.serve;

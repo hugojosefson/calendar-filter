@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "@std/assert";
 
-import { CliUsageError, parseCliOptions } from "../src/cli-options.ts";
+import { CliUsageError, parseCliOptions } from "../src/cli/options.ts";
 
 Deno.test("CLI options use safe server and handler defaults", () => {
   assertEquals(parseCliOptions([]), {

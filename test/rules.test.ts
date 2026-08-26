@@ -1,6 +1,6 @@
 import { assert, assertThrows } from "@std/assert";
 
-import { compileRule, evaluateRules } from "../src/rules.ts";
+import { compileRule, evaluateRules } from "../src/filter/rules.ts";
 
 Deno.test("RE2JS maps all supported flags and keeps u as a no-op", () => {
   const cases: Array<[string, string, string]> = [

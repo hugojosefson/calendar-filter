@@ -7,14 +7,14 @@ import {
   setBuilderRuleFlags,
   setBuilderRuleMode,
   setBuilderRulePattern,
-} from "../src/builder-transform.ts";
+} from "../src/builder/transform.ts";
 import {
   buildResultUrl,
   createBuilderState,
   decodeBuilderQuery,
   encodeBuilderQuery,
   parseResultUrl,
-} from "../src/builder-codec.ts";
+} from "../src/builder/codec.ts";
 
 const decode = (query: string) =>
   decodeBuilderQuery(new URLSearchParams(query));

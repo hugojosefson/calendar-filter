@@ -1,8 +1,8 @@
 import { assertEquals } from "@std/assert";
 
-import { isGloballyRoutableAddress } from "../src/ip-policy.ts";
-import { UpstreamError } from "../src/upstream-error.ts";
-import { assertUpstreamUrl } from "../src/upstream-policy.ts";
+import { isGloballyRoutableAddress } from "../src/upstream/ip-policy.ts";
+import { UpstreamError } from "../src/upstream/error.ts";
+import { assertUpstreamUrl } from "../src/upstream/policy.ts";
 
 Deno.test("IP policy covers range boundaries and mapped literals", () => {
   for (
