@@ -76,6 +76,7 @@ export function installRegexEditor(
     parent: input.parentElement!,
   });
   view.dom.classList.add("cm-re2");
+  input.after(view.dom);
   setValidity(valid(input.value, selectedFlags(input)), input.value);
   return view;
 }

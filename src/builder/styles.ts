@@ -156,6 +156,10 @@ button {
   overflow-wrap: anywhere;
 }
 
+[data-regex-explanation] {
+  font-style: italic;
+}
+
 .rule-mode,
 .rule-flags {
   margin: 0;

@@ -29,6 +29,20 @@ async function withPage(
   try {
     const page = await instance.newPage({ javaScriptEnabled });
     const browserFailures: string[] = [];
+    await page.exposeFunction(
+      "recordCspViolationForTest",
+      (violation: string) => browserFailures.push(`CSP: ${violation}`),
+    );
+    await page.addInitScript(() => {
+      globalThis.addEventListener("securitypolicyviolation", (event) => {
+        const target = globalThis as typeof globalThis & {
+          recordCspViolationForTest: (violation: string) => Promise<void>;
+        };
+        target.recordCspViolationForTest(
+          `${event.effectiveDirective}: ${event.blockedURI}`,
+        );
+      });
+    });
     page.on("console", (message) => {
       if (message.type() === "error" || message.type() === "warning") {
         browserFailures.push(`console ${message.type()}: ${message.text()}`);
@@ -91,6 +105,7 @@ Deno.test("enhancement preserves URL state and editor semantics", async () => {
     page.on("request", (request) => requests.push(request.url()));
 
     await page.goto(origin);
+    assertEquals(await page.locator("script:not([src])").count(), 0);
     await page.emulateMedia({ colorScheme: "dark" });
     const darkBackground = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue(
@@ -153,6 +168,19 @@ Deno.test("enhancement preserves URL state and editor semantics", async () => {
     );
     await page.getByRole("switch").click();
     await page.locator(".cm-editor").waitFor();
+    assertEquals(
+      await page.locator(
+        ".cm-editor + [data-regex-error] + [data-regex-explanation]",
+      )
+        .count(),
+      1,
+    );
+    assertEquals(
+      await page.locator("[data-regex-explanation]").evaluate((node) =>
+        getComputedStyle(node).fontStyle
+      ),
+      "italic",
+    );
     assert(
       (await page.locator("[data-regex-explanation]").innerText()).startsWith(
         "Matches ",
