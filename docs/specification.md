@@ -1,6 +1,26 @@
 # HTTP specification
 
-This document defines the `/webcal` contract.
+This document defines the `/webcal` API and root URL-builder contracts.
+
+## URL builder
+
+`GET` and `HEAD /` return the HTML builder. Its query is the exact ordered API
+query described below. An empty query renders without fetching an upstream;
+otherwise the page includes retained and total event counts, retained-event
+cards, or an escaped preview error. The generated subscription URL uses `webcal`
+and `/webcal` with the same query.
+
+Native forms submit through `GET /build` for edits and `GET /build-url` for an
+existing result URL. Both return `303` to the canonical root query. The builder,
+forms, preview, and result URL work without JavaScript. `/builder.css` and
+`/builder.js` provide self-hosted Pico CSS and progressive CodeMirror/RE2
+enhancement. Enhanced text updates replace the current history entry after a
+short delay; structural actions and explicit submissions push entries.
+
+Builder pages and assets use `Cache-Control: no-store`, a same-origin content
+security policy, `Referrer-Policy: no-referrer`, MIME sniffing and frame
+protections, and `X-Robots-Tag: noindex`. They accept only `GET` and `HEAD`;
+other methods return `405` with `Allow: GET, HEAD`.
 
 ## Request query
 
@@ -122,7 +142,7 @@ Error wording is not stable.
 | Status | Condition                                                                                                                                  |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `400`  | Invalid, missing, repeated, empty required, unknown, or over-limit query data; invalid regex or flags; invalid initial URL or destination. |
-| `404`  | Any path other than `/webcal`.                                                                                                             |
+| `404`  | Any unsupported path.                                                                                                                      |
 | `405`  | A method other than `GET`, `HEAD`, or `OPTIONS` on `/webcal`.                                                                              |
 | `414`  | Encoded request URL exceeds its configured limit.                                                                                          |
 | `500`  | Unexpected handler failure.                                                                                                                |
@@ -170,4 +190,6 @@ They also cover name replacement, removal, insertion, escaping, UTF-8 folding,
 and line endings; HTTP methods, conditional responses, CORS, error JSON,
 headers, and exact ETags; and mocked timeout, redirects, address policy, body
 limits, revalidation, cache directives and age, LRU eviction, fetch sharing, and
-failed revalidation.
+failed revalidation. Browser tests cover native no-JavaScript forms, local
+assets, light and dark styles, debounced URL state, history traversal, RE2
+highlighting and validation, and single-line Enter and Tab behavior.

@@ -1,5 +1,22 @@
 # Filter guide
 
+## URL builder
+
+Open a deployment's root URL to build a subscription URL and preview its event
+cards. The builder's address-bar query is the exact ordered `/webcal` API query,
+so a page can be bookmarked or shared without separate UI state. It accepts an
+existing `http`, `https`, or `webcal` result URL for further editing.
+
+The forms remain usable when JavaScript is unavailable. With JavaScript, text
+edits update after a short delay without adding history entries, while rule
+additions, removals, reordering, mode changes, and submitted updates add history
+entries. Back and forward reload server-rendered state.
+
+Text mode quotes its value as a literal RE2 expression and exposes only the `i`
+flag. Regex mode supports `i`, `m`, `s`, and `u`, validates with RE2
+immediately, and uses a syntax-highlighted CodeMirror editor. A regex can switch
+to text mode only when it recognizes exactly one literal string.
+
 ## Rule pipeline
 
 Filter parameters are an ordered pipeline. For each `VEVENT`, the first matching

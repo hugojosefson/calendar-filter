@@ -40,6 +40,11 @@ webcal://localhost:9000/webcal?input=https%3A%2F%2Fexample.com%2Fcalendar.ics&in
 The default is deny, so this keeps events whose summary, description, or
 location matches `Practice`.
 
+Open `http://localhost:9000/` to build the URL interactively and preview
+retained events. The builder works without JavaScript; JavaScript adds debounced
+updates, browser history, and a syntax-highlighted RE2 editor. Browser assets
+are served locally by calendar-filter.
+
 ## Rules
 
 Rules are evaluated in their URL order. The first matching rule wins:
@@ -61,8 +66,8 @@ This keeps P15 and untagged events while removing other P and F groups. Read the
 ## API
 
 `GET` and `HEAD /webcal` filter a calendar. `OPTIONS /webcal` answers CORS
-preflight requests. `input` accepts one `http`, `https`, or `webcal` URL; add
-filter rules and optionally `calendar-name`. The
+preflight requests. `GET /` serves the URL builder. `input` accepts one `http`,
+`https`, or `webcal` URL; add filter rules and optionally `calendar-name`. The
 [HTTP specification](docs/specification.md) defines the query, responses,
 errors, caching, and accepted ICS input.
 
@@ -74,7 +79,8 @@ the calendar envelope and non-event components even when no events remain.
 Run a checkout with `deno task serve`. For Deno Deploy, use
 `jsr:@hugojosefson/calendar-filter/serve` as the entrypoint.
 
-The packaged CLI listens on `http://0.0.0.0:9000/webcal` by default:
+The packaged CLI serves the builder at `http://0.0.0.0:9000/` and the API at
+`http://0.0.0.0:9000/webcal` by default:
 
 ```sh
 deno run --allow-net jsr:@hugojosefson/calendar-filter/cli --port=9001

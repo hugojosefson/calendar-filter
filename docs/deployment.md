@@ -69,9 +69,9 @@ The packaged server needs only network permission:
 deno run --allow-net jsr:@hugojosefson/calendar-filter/cli
 ```
 
-It listens on `http://0.0.0.0:9000/webcal`. In a checkout, `deno task serve`
-does the same. Pass values as `--flag value` or `--flag=value`; options cannot
-repeat.
+It serves the builder at `http://0.0.0.0:9000/` and the API at
+`http://0.0.0.0:9000/webcal`. In a checkout, `deno task serve` does the same.
+Pass values as `--flag value` or `--flag=value`; options cannot repeat.
 
 ```
 Usage: calendar-filter [options]
