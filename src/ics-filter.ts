@@ -1,5 +1,6 @@
 import { IcsError } from "./ics-error.ts";
 import { type LogicalLine, parseLogicalLines } from "./ics-lines.ts";
+import { unescapeIcsText } from "./ics-text.ts";
 import { evaluateRules, type EventFields, type FilterRule } from "./rules.ts";
 
 type Range = { end: number; start: number; text: string };
@@ -134,17 +135,7 @@ function addEventField(fields: EventFields, name: string, value: string): void {
     return;
   }
   const existing = fields[key] ?? [];
-  fields[key] = [...existing, unescapeText(value)];
-}
-
-function unescapeText(value: string): string {
-  return value.replace(/\\(.)/gs, (match, character: string) => {
-    if (character === "n" || character === "N") return "\n";
-    if (character === "\\" || character === "," || character === ";") {
-      return character;
-    }
-    return match;
-  });
+  fields[key] = [...existing, unescapeIcsText(value)];
 }
 
 function addCalendarNameEdit(

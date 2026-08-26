@@ -125,6 +125,9 @@ export function buildResultUrl(base: URL | string, query: BuilderQuery): URL {
 export function parseResultUrl(value: string): BuilderState {
   try {
     const url = new URL(value);
+    if (!["http:", "https:", "webcal:"].includes(url.protocol)) {
+      return invalidUrl("Pasted URL must use http, https, or webcal");
+    }
     if (url.pathname !== "/webcal") {
       return invalidUrl("Pasted URL must use /webcal");
     }

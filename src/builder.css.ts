@@ -1,0 +1,2 @@
+export const builderCss =
+  `:root { color-scheme: light dark; }\n.actions { display: flex; flex-wrap: wrap; gap: .4rem; }\n.rule { border-top: 1px solid var(--pico-muted-border-color); padding-top: 1rem; }\n.event { margin-bottom: .75rem; }\n.error { color: var(--pico-del-color); }\n.implicit-submit { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }\n`;
