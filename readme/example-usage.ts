@@ -1,4 +1,5 @@
 #!/usr/bin/env -S deno run --allow-net --allow-env
+/** @module Example usage of the calendar-filter server. */
 import { createCalendarFilterHandler } from "../mod.ts";
 
 const port = Number(Deno.env.get("PORT") ?? 9000);
