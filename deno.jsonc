@@ -1,21 +1,28 @@
 {
   "name": "@hugojosefson/calendar-filter",
+  "compilerOptions": { "lib": ["deno.ns", "dom", "dom.iterable"] },
   "version": "0.0.0",
   "license": "MIT",
   "exports": {
     ".": "./mod.ts",
-    "./example-usage": "./readme/example-usage.ts"
+    "./builder": "./builder.ts",
+    "./example-usage": "./readme/example-usage.ts",
+    "./cli": "./src/cli/cli.ts",
+    "./serve": "./src/server/serve.ts"
   },
   "tasks": {
     "default": "       deno fmt && deno lint --fix && (deno check & deno task test) && deno task readme",
     "all": "           deno task default && deno publish --dry-run",
-    "test": "          deno test --parallel --trace-leaks --coverage",
+    "test": "          deno test --parallel --trace-leaks --coverage test",
+    "assets": "        deno run --allow-read --allow-write=src/builder/generated-assets.ts --allow-net=registry.npmjs.org --allow-run=deno scripts/generate-builder-assets.ts",
+    "test:browser": " # Playwright probes protected system paths (including WSL), dynamic caches, and Chromium; Deno requires --allow-all despite localhost-only test code.\ndeno test --no-check --allow-all test-browser",
+    "serve": "         deno run --allow-net src/cli/cli.ts",
     "dev": "           deno test --parallel --trace-leaks --watch",
     "coverage": "      deno coverage",
     "readme": "        touch README.md && chmod +w README.md && ./readme/generate-readme.ts readme/README.md > README.md && deno fmt README.md; chmod -w README.md",
     "git-is-clean": "  test -z \"$(git status --porcelain)\"",
     "version": "       deno --allow-all npm:fork-version@5.2.0 --inspect-version",
-    "release": "       echo 'ERROR: Not usually a good idea to do the release locally. Instead, push the main branch, and let the release workflow perform the actual release.'; exit 2",
+    "release": "       echo 'ERROR: Push main and let the release workflow publish the package.'; exit 2",
     "release:run": "   deno task release:ready && deno task release:commit && deno task release:tag && deno task release:push",
     "release:ready": " deno task git-is-clean && deno task default && deno task git-is-clean",
     "release:commit": "deno --allow-all npm:fork-version@5.2.0 --changelog-all --tag-prefix='' --skip-tag && deno fmt CHANGELOG.md && git add CHANGELOG.md && git commit --amend --no-edit",
@@ -24,7 +31,21 @@
   },
   "lock": false,
   "imports": {
+    "re2js": "npm:re2js@2.8.6",
+    "@codemirror/state": "npm:@codemirror/state@6.5.2",
+    "@codemirror/view": "npm:@codemirror/view@6.39.16",
+    "@playwright/test": "npm:@playwright/test@1.62.1",
+    "@picocss/pico": "npm:@picocss/pico@2.1.1",
+    "@vikrant_kadam/regex-simplifier": "npm:@vikrant_kadam/regex-simplifier@1.0.4",
     "@std/assert": "jsr:@std/assert@^1.0.19",
     "@std/path": "jsr:@std/path@^1.1.6"
+  },
+  "deploy": {
+    "org": "se",
+    "app": "calendar-filter",
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "src/server/serve.ts"
+    }
   }
 }
