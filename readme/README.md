@@ -8,6 +8,9 @@ A web handler that filters iCalendar (ICS) subscription feeds with regular
 expressions. Point a calendar app at the handler to keep selected events, such
 as one age group from a club calendar that contains every group.
 
+Use the hosted [calendar filter builder](https://calendar-filter.se.deno.net/)
+to create and preview a filtered subscription URL.
+
 Requires [Deno](https://deno.com/) v2.9.5 or later.
 
 ## How it works
