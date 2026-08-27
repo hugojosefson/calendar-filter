@@ -4,12 +4,20 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing version tag to publish
+        required: true
+        type: string
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: denoland/setup-deno@v2
       - run: deno task test
       # Installer needs package-manager/download/cache permissions for Chromium.
@@ -19,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: denoland/setup-deno@v2
       - run: deno fmt --check
       - run: deno lint
@@ -34,14 +44,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: denoland/setup-deno@v2
 
       - name: Configure git
+        if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Release a new version
+        if: github.event_name == 'push'
         run: deno task release:run
 
       - name: Publish the new version
